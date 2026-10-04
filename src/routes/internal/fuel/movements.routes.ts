@@ -1,4 +1,5 @@
 import {
+  cancelFuelRefueling,
   createFuelIssue,
   createFuelReceipt,
   createFuelReceiptEditRequest,
@@ -12,6 +13,7 @@ import {
   sendFuelReceiptActEmail,
   setFuelReceiptActFile,
   syncFuelRefuelings,
+  updateFuelRefueling,
 } from '$/context/fuel';
 import { rbac } from '$/middlewares/rbac.middleware';
 import { zValidator } from '$/middlewares/zodValidator.middleware';
@@ -28,8 +30,10 @@ import {
   orgOf,
   receiptSchema,
   receiptsQuery,
+  refuelingCancelSchema,
   refuelingSchema,
   refuelingSyncSchema,
+  refuelingUpdateSchema,
   refuelingsQuery,
   rejectSchema,
   reviewSchema,
@@ -212,4 +216,43 @@ export const fuelMovementRoutes = new Hono<AppEnv>()
     }));
 
     return c.json(await syncFuelRefuelings(orgOf(c), user.id, items));
-  });
+  })
+  .put(
+    '/refuelings/:id',
+    rbac({ roles: FUEL_ROLES.supervise }),
+    zValidator('param', idParam),
+    zValidator('json', refuelingUpdateSchema),
+    async (c) => {
+      const { reason, ...changes } = c.req.valid('json');
+
+      return run(async () => {
+        const refueling = await updateFuelRefueling({
+          organizationId: orgOf(c),
+          id: c.req.valid('param').id,
+          changes,
+          reason,
+          userId: userOf(c).id,
+        });
+
+        return c.json(refueling);
+      });
+    },
+  )
+  .post(
+    '/refuelings/:id/cancel',
+    rbac({ roles: FUEL_ROLES.supervise }),
+    zValidator('param', idParam),
+    zValidator('json', refuelingCancelSchema),
+    async (c) => {
+      return run(async () => {
+        const refueling = await cancelFuelRefueling({
+          organizationId: orgOf(c),
+          id: c.req.valid('param').id,
+          reason: c.req.valid('json').reason,
+          userId: userOf(c).id,
+        });
+
+        return c.json(refueling);
+      });
+    },
+  );

@@ -250,6 +250,7 @@ export const getFuelDashboardSummary = async (organizationId: string, from: stri
     .where(
       and(
         eq(fuelRefuelings.organizationId, organizationId),
+        isNull(fuelRefuelings.cancelledAt),
         gte(fuelRefuelings.operationalDate, from),
         lte(fuelRefuelings.operationalDate, to),
       ),

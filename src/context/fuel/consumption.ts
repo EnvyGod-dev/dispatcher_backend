@@ -12,6 +12,7 @@ import {
   eq,
   gte,
   inArray,
+  isNull,
   lte,
   sql,
   type SQL,
@@ -99,6 +100,7 @@ export const computeFuelConsumption = async (
 
   const refuelConditions: SQL[] = [
     eq(fuelRefuelings.organizationId, organizationId),
+    isNull(fuelRefuelings.cancelledAt),
     gte(fuelRefuelings.operationalDate, from),
     lte(fuelRefuelings.operationalDate, to),
   ];
@@ -318,6 +320,7 @@ export const getFuelConsumptionTimeseries = async (
     .where(
       and(
         eq(fuelRefuelings.organizationId, organizationId),
+        isNull(fuelRefuelings.cancelledAt),
         eq(fuelRefuelings.receiverVehicleId, vehicleId),
         gte(fuelRefuelings.operationalDate, from),
         lte(fuelRefuelings.operationalDate, to),

@@ -1224,6 +1224,9 @@ export const fuelRefuelings = pgTable(
     longitude: numeric("longitude", { precision: 10, scale: 7 }),
     photoUrl: varchar("photo_url", { length: 1024 }),
     notes: text("notes"),
+    cancelledAt: timestamp("cancelled_at", { withTimezone: true, mode: "string" }),
+    cancelledBy: uuid("cancelled_by").references(() => users.id),
+    cancelReason: text("cancel_reason"),
     syncedAt: timestamp("synced_at", { withTimezone: true, mode: "string" }),
     createdBy: uuid("created_by")
       .notNull()

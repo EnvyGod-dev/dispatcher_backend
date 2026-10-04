@@ -1,6 +1,7 @@
 import { drizzleDb } from '$/libs/database/db';
 
 import {
+  fuelLedgerEntries,
   fuelRefuelings,
   fuelTanks,
   vehicles,
@@ -11,6 +12,7 @@ import {
   desc,
   eq,
   gte,
+  isNull,
   lte,
   sql,
   type SQL,
@@ -19,6 +21,7 @@ import {
 import {
   type ShiftType,
   type Holder,
+  type Tx,
   toNumberOrNull,
   round,
   toNumeric,
@@ -263,9 +266,14 @@ export const getFuelRefuelings = async (
     dispenserVehicleId?: string;
     tankId?: string;
     shiftType?: ShiftType;
+    includeCancelled?: boolean;
   },
 ) => {
   const conditions: SQL[] = [eq(fuelRefuelings.organizationId, organizationId)];
+
+  if (!input?.includeCancelled) {
+    conditions.push(isNull(fuelRefuelings.cancelledAt));
+  }
 
   if (input?.from) {
     conditions.push(gte(fuelRefuelings.operationalDate, input.from));
@@ -314,4 +322,211 @@ export const getFuelRefuelings = async (
     dispenserMineNumber: r.dispenserMineNumber,
     tankName: r.tankName,
   }));
+};
+type RefuelingChanges = {
+  receiverVehicleId?: string;
+  quantity?: string | number | null;
+  meterStart?: string | number | null;
+  meterEnd?: string | number | null;
+  refueledAt?: string;
+  operationalDate?: string;
+  shiftType?: ShiftType | null;
+  notes?: string | null;
+};
+
+const lockRefueling = async (tx: Tx, organizationId: string, id: string) => {
+  const [refueling] = await tx
+    .select()
+    .from(fuelRefuelings)
+    .where(and(eq(fuelRefuelings.id, id), eq(fuelRefuelings.organizationId, organizationId)))
+    .for('update')
+    .limit(1);
+
+  if (!refueling) {
+    throw new Error('Цэнэглэлт олдсонгүй.');
+  }
+
+  if (refueling.cancelledAt) {
+    throw new Error('Цуцлагдсан цэнэглэлтийг өөрчлөх боломжгүй.');
+  }
+
+  return refueling;
+};
+
+const sourceHolderOf = async (tx: Tx, refueling: typeof fuelRefuelings.$inferSelect) => {
+  if (refueling.sourceType === 'dispenser') {
+    const dispenser = await getDispenserVehicle(tx, refueling.organizationId, refueling.dispenserVehicleId!);
+
+    return {
+      holder: { holderType: 'dispenser', vehicleId: dispenser.id } as Holder,
+      label: `Түгээх машин ${dispenser.mineNumber ?? dispenser.name}`,
+    };
+  }
+
+  const tank = await getOrgTank(tx, refueling.organizationId, refueling.tankId!, false);
+
+  return { holder: { holderType: 'tank', tankId: tank.id } as Holder, label: tank.name };
+};
+
+/**
+ * Цэнэглэлтийг засна (manager / supervise). Ledger-ийн мөрүүдийг устгаад шинэ утгаар дахин бичнэ.
+ */
+export const updateFuelRefueling = async (input: {
+  organizationId: string;
+  id: string;
+  changes: RefuelingChanges;
+  reason: string;
+  userId: string;
+}) => {
+  if (!input.reason?.trim()) {
+    throw new Error('Засах шалтгаан бичнэ үү.');
+  }
+
+  return drizzleDb.transaction(async (tx) => {
+    const before = await lockRefueling(tx, input.organizationId, input.id);
+    const { changes } = input;
+
+    const metersChanged = changes.meterStart !== undefined || changes.meterEnd !== undefined;
+    const meterStart = changes.meterStart !== undefined ? changes.meterStart : before.meterStart;
+    const meterEnd = changes.meterEnd !== undefined ? changes.meterEnd : before.meterEnd;
+    const quantityInput = changes.quantity !== undefined ? changes.quantity : metersChanged ? null : before.quantity;
+
+    const { quantity } = resolveRefuelQuantity({
+      organizationId: input.organizationId,
+      sourceType: before.sourceType,
+      receiverVehicleId: changes.receiverVehicleId ?? before.receiverVehicleId,
+      quantity: quantityInput,
+      meterStart,
+      meterEnd,
+      refueledAt: changes.refueledAt ?? before.refueledAt,
+      operatorId: before.operatorId,
+      createdBy: input.userId,
+    });
+
+    const refueledAt = changes.refueledAt ?? before.refueledAt;
+    const operationalDate =
+      changes.operationalDate ?? (changes.refueledAt ? toOperationalDate(changes.refueledAt) : before.operationalDate);
+
+    const source = await sourceHolderOf(tx, before);
+    const receiver = await getOrgVehicle(
+      tx,
+      input.organizationId,
+      changes.receiverVehicleId ?? before.receiverVehicleId,
+      'Хүлээн авагч техник',
+    );
+    const oldReceiverHolder: Holder = { holderType: 'equipment', vehicleId: before.receiverVehicleId };
+    const receiverHolder: Holder = { holderType: 'equipment', vehicleId: receiver.id };
+    const receiverLabel = `Техник ${receiver.mineNumber ?? receiver.name}`;
+    const receiverCapacity = toNumberOrNull(receiver.fuelTankCapacity);
+
+    if (receiverCapacity !== null && receiverCapacity > 0 && quantity > receiverCapacity) {
+      throw new Error(
+        `${receiverLabel}: нэг удаагийн цэнэглэлт (${quantity} л) савны багтаамжаас (${receiverCapacity} л) их байна.`,
+      );
+    }
+
+    await lockHolders(tx, input.organizationId, [source.holder, oldReceiverHolder, receiverHolder]);
+    await tx.delete(fuelLedgerEntries).where(eq(fuelLedgerEntries.refuelingId, before.id));
+
+    await assertAfterOpening(tx, input.organizationId, source.holder, refueledAt, source.label);
+    await assertAfterOpening(tx, input.organizationId, receiverHolder, refueledAt, receiverLabel);
+    await assertWithdrawable(tx, input.organizationId, source.holder, refueledAt, quantity, source.label);
+
+    const after = requireRow(
+      await tx
+        .update(fuelRefuelings)
+        .set({
+          receiverVehicleId: receiver.id,
+          quantity: toNumeric(quantity),
+          meterStart: toNumericOrNull(meterStart),
+          meterEnd: toNumericOrNull(meterEnd),
+          refueledAt,
+          operationalDate,
+          ...(changes.shiftType !== undefined && { shiftType: changes.shiftType }),
+          ...(changes.notes !== undefined && { notes: changes.notes }),
+          updatedAt: now(),
+        })
+        .where(eq(fuelRefuelings.id, before.id))
+        .returning(),
+    );
+
+    await insertLedger(tx, input.organizationId, [
+      {
+        holder: source.holder,
+        entryType: 'refuel',
+        delta: -quantity,
+        occurredAt: refueledAt,
+        operationalDate,
+        refuelingId: after.id,
+      },
+      {
+        holder: receiverHolder,
+        entryType: 'refuel',
+        delta: quantity,
+        occurredAt: refueledAt,
+        operationalDate,
+        refuelingId: after.id,
+      },
+    ]);
+
+    await insertAudit(tx, {
+      organizationId: input.organizationId,
+      entityType: 'fuel_refueling',
+      entityId: after.id,
+      action: 'update',
+      before,
+      after: { ...after, reason: input.reason.trim() },
+      userId: input.userId,
+    });
+
+    return after;
+  });
+};
+
+/**
+ * Цэнэглэлтийг цуцална (manager / supervise). Ledger-ийн мөрүүдийг устгаж, үлдэгдлийг буцаана.
+ */
+export const cancelFuelRefueling = async (input: {
+  organizationId: string;
+  id: string;
+  reason: string;
+  userId: string;
+}) => {
+  if (!input.reason?.trim()) {
+    throw new Error('Цуцлах шалтгаан бичнэ үү.');
+  }
+
+  return drizzleDb.transaction(async (tx) => {
+    const before = await lockRefueling(tx, input.organizationId, input.id);
+    const source = await sourceHolderOf(tx, before);
+    const receiverHolder: Holder = { holderType: 'equipment', vehicleId: before.receiverVehicleId };
+
+    await lockHolders(tx, input.organizationId, [source.holder, receiverHolder]);
+    await tx.delete(fuelLedgerEntries).where(eq(fuelLedgerEntries.refuelingId, before.id));
+
+    const after = requireRow(
+      await tx
+        .update(fuelRefuelings)
+        .set({
+          cancelledAt: now(),
+          cancelledBy: input.userId,
+          cancelReason: input.reason.trim(),
+          updatedAt: now(),
+        })
+        .where(eq(fuelRefuelings.id, before.id))
+        .returning(),
+    );
+
+    await insertAudit(tx, {
+      organizationId: input.organizationId,
+      entityType: 'fuel_refueling',
+      entityId: after.id,
+      action: 'cancel',
+      before,
+      after,
+      userId: input.userId,
+    });
+
+    return after;
+  });
 };
