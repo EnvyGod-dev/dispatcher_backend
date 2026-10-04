@@ -324,6 +324,7 @@ export const getFuelRefuelings = async (
   }));
 };
 type RefuelingChanges = {
+  tankId?: string;
   receiverVehicleId?: string;
   quantity?: string | number | null;
   meterStart?: string | number | null;
@@ -407,7 +408,19 @@ export const updateFuelRefueling = async (input: {
     const operationalDate =
       changes.operationalDate ?? (changes.refueledAt ? toOperationalDate(changes.refueledAt) : before.operationalDate);
 
-    const source = await sourceHolderOf(tx, before);
+    const oldSource = await sourceHolderOf(tx, before);
+    let source = oldSource;
+
+    if (changes.tankId && changes.tankId !== before.tankId) {
+      if (before.sourceType !== 'tank') {
+        throw new Error('Түгээх машинаас хийсэн цэнэглэлтийн агуулахыг солих боломжгүй.');
+      }
+
+      const tank = await getOrgTank(tx, input.organizationId, changes.tankId);
+
+      source = { holder: { holderType: 'tank', tankId: tank.id } as Holder, label: tank.name };
+    }
+
     const receiver = await getOrgVehicle(
       tx,
       input.organizationId,
@@ -425,7 +438,7 @@ export const updateFuelRefueling = async (input: {
       );
     }
 
-    await lockHolders(tx, input.organizationId, [source.holder, oldReceiverHolder, receiverHolder]);
+    await lockHolders(tx, input.organizationId, [oldSource.holder, source.holder, oldReceiverHolder, receiverHolder]);
     await tx.delete(fuelLedgerEntries).where(eq(fuelLedgerEntries.refuelingId, before.id));
 
     await assertAfterOpening(tx, input.organizationId, source.holder, refueledAt, source.label);
@@ -436,6 +449,7 @@ export const updateFuelRefueling = async (input: {
       await tx
         .update(fuelRefuelings)
         .set({
+          ...(source.holder.holderType === 'tank' && { tankId: source.holder.tankId }),
           receiverVehicleId: receiver.id,
           quantity: toNumeric(quantity),
           meterStart: toNumericOrNull(meterStart),
