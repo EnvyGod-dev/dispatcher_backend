@@ -272,6 +272,7 @@ export const refuelingsQuery = optionalRangeQuery.extend({
 
 export const refuelingUpdateSchema = z
   .object({
+    tankId: uuid.optional(),
     receiverVehicleId: uuid.optional(),
     quantity: liters.nullable().optional(),
     meterStart: meterValue.nullable().optional(),
