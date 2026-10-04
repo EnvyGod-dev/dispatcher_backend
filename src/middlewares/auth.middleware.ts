@@ -28,9 +28,26 @@ export const authMiddleware: MiddlewareHandler = async (
    *
    * better-auth.session_token=...
    */
-  const session = await auth.api.getSession({
-    headers: c.req.raw.headers,
-  });
+  const { headers: sessionHeaders, response: session } =
+    await auth.api.getSession({
+      headers: c.req.raw.headers,
+      returnHeaders: true,
+    });
+
+  /**
+   * Better Auth session-ийг сунгах (updateAge) эсвэл cookieCache-ийг
+   * шинэчлэх үед Set-Cookie буцаадаг. Үүнийг client руу дамжуулахгүй бол
+   * browser дахь cookie хуучирч, хэсэг хугацааны дараа санамсаргүй 401 өгнө.
+   */
+  const forwardSessionCookies = () => {
+    sessionHeaders?.forEach((value, key) => {
+      if (key.toLowerCase() === 'set-cookie') {
+        c.header('Set-Cookie', value, { append: true });
+      }
+    });
+  };
+
+  forwardSessionCookies();
 
   if (!session?.user) {
     throw new HTTPException(401, {

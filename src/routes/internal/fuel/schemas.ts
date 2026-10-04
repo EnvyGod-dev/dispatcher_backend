@@ -5,11 +5,13 @@ import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
 
 export const FUEL_ROLES = {
+  // fuel_operator: вебэд зөвхөн харна, mobile-аас цэнэглэлт/орлого бүртгэнэ.
   view: ['superadmin', 'admin', 'fuel_operator', 'dispatcher', 'ita', 'manager'],
   operate: ['superadmin', 'admin', 'fuel_operator', 'dispatcher', 'manager'],
-  supervise: ['superadmin', 'admin', 'dispatcher', 'fuel_operator', 'manager'],
-  engineer: ['superadmin', 'admin', 'ita', 'fuel_operator', 'manager'],
-  manage: ['superadmin', 'admin', 'fuel_operator',  'manager'],
+  // Хяналт, засвар, тохиргоо: admin, dispatcher, manager.
+  supervise: ['superadmin', 'admin', 'dispatcher', 'manager'],
+  engineer: ['superadmin', 'admin', 'dispatcher', 'ita', 'manager'],
+  manage: ['superadmin', 'admin', 'dispatcher', 'manager'],
 } satisfies Record<string, UserRole[]>;
 
 export const orgOf = (c: Context<AppEnv>): string => {

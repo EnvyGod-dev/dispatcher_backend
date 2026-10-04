@@ -9,6 +9,7 @@ import {
   fuelRefuelings,
   fuelSuppliers,
   fuelTanks,
+  users,
   vehicles,
 } from '$/libs/database/schema';
 
@@ -312,10 +313,17 @@ export const getFuelAuditLogs = async (
     conditions.push(eq(fuelAuditLogs.entityId, input.entityId));
   }
 
-  return drizzleDb
-    .select()
+  const rows = await drizzleDb
+    .select({
+      log: fuelAuditLogs,
+      userName: sql<string | null>`COALESCE(${users.firstName}, ${users.name})`,
+      userRole: users.role,
+    })
     .from(fuelAuditLogs)
+    .leftJoin(users, eq(users.id, fuelAuditLogs.userId))
     .where(and(...conditions))
     .orderBy(desc(fuelAuditLogs.createdAt))
     .limit(Math.min(input?.limit ?? 100, 500));
+
+  return rows.map((r) => ({ ...r.log, userName: r.userName, userRole: r.userRole }));
 };
