@@ -2,8 +2,23 @@ import { getOrganizationByPk } from '$/context/organization';
 import { getUserByPhoneNumber } from '$/context/user';
 import { zValidator } from '$/middlewares/zodValidator.middleware';
 import { auth } from '$/server/auth';
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import { z } from 'zod';
+
+/**
+ * Better Auth нэг хариунд хэд хэдэн cookie тавьдаг
+ * (session_token, session_data, dont_remember).
+ *
+ * ⚠️ `headers.get('Set-Cookie')` тэдгээрийг таслалаар нийлүүлж НЭГ мөр болгодог тул
+ * browser зөвхөн эхнийхийг нь хүлээж авдаг. Үүнээс болж өмнөх хэрэглэгчийн
+ * session_data cookie үлдэж, өөр хэрэглэгчээр нэвтэрсэн ч хуучин хүнээр орж байсан.
+ * Cookie бүрийг тусад нь дамжуулна.
+ */
+const forwardSetCookies = (c: Context, response: Response) => {
+  for (const cookie of response.headers.getSetCookie()) {
+    c.header('Set-Cookie', cookie, { append: true });
+  }
+};
 
 const authRoutes = new Hono()
   .post(
@@ -84,12 +99,7 @@ const authRoutes = new Hono()
        * Better Auth-аас ирсэн cookie-г
        * browser руу header-аар дамжуулна.
        */
-      const setCookie =
-        response.headers.get('Set-Cookie');
-
-      if (setCookie) {
-        c.header('Set-Cookie', setCookie);
-      }
+      forwardSetCookies(c, response);
 
       /**
        * User-ийн organization-ийг авна.
@@ -133,12 +143,7 @@ const authRoutes = new Hono()
         asResponse: true,
       });
 
-    const setCookie =
-      response.headers.get('Set-Cookie');
-
-    if (setCookie) {
-      c.header('Set-Cookie', setCookie);
-    }
+    forwardSetCookies(c, response);
 
     return c.json({
       success: response.ok,

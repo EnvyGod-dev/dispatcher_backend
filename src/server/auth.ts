@@ -195,9 +195,16 @@ export const auth = betterAuth({
     expiresIn: 60 * 60 * 24 * 30,
     updateAge: 60 * 60 * 24 * 7,
 
+    /**
+     * ⚠️ Cookie cache УНТРААЛТТАЙ.
+     *
+     * better-auth 1.3 нь session_data cookie-г session_token-той тулгахгүйгээр
+     * шууд итгэдэг. Нэг browser дээр хэрэглэгч солигдох үед хуучин session_data
+     * үлдвэл шинэ хэрэглэгч хуучин хэрэглэгчээр (жишээ нь superadmin → fuel_operator)
+     * харагддаг байсан. Session-ийг токеноор нь DB-ээс шалгана.
+     */
     cookieCache: {
-      enabled: true,
-      maxAge: 60 * 5,
+      enabled: false,
     },
   },
 });
