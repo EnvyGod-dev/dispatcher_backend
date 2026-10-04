@@ -1,0 +1,48 @@
+import { Hono } from 'hono';
+import shiftRoutes from './shift.routes';
+import type { AppEnv } from '$/utils/app-env';
+import locationRoutes from './mining-block.routes';
+import miningSectionRoutes from './mining-section.routes';
+import vehicleRoutes from './vehicle.routes';
+import inspectionRoutes from './inspection.routes';
+import worklogRoutes from './worklog.routes';
+import dailyPlanRoutes from './daily-plan.routes';
+import minigRouteRoutes from './mining-route.routes';
+import markShaderRoutes from './markshader.routes';
+import stockpileRoutes from './stockpile.routes';
+import shiftReportRoutes from './shift-report.routes';
+import dashboardMetricsRoute from './dashboard-metrics.routes';
+import shiftInspectionRoutes from './shift-inspection.routes';
+import shiftKpiRoutes from './shift-kpi.routes';
+import monthlyPlanRoutes from './monthly-plan.routes';
+import orgSettingsRoutes from './organization-settings.routes';
+import worklogReportRoutes from './worklog-report.routes';
+import notificationRoutes from './notification.routes';
+import equipmentShiftLogRoutes from './equipment-shift-log.routes';
+import fuelRoutes from './fuel';
+
+const router = new Hono<AppEnv>();
+
+router.route('/', shiftRoutes);
+router.route('/', locationRoutes);
+router.route('/', miningSectionRoutes);
+router.route('/', vehicleRoutes);
+router.route('/', inspectionRoutes);
+router.route('/', worklogRoutes);
+router.route('/', dailyPlanRoutes);
+router.route('/', minigRouteRoutes);
+router.route('/markshader', markShaderRoutes);
+router.route('/', stockpileRoutes);
+router.route('/', shiftReportRoutes);
+router.route('/', dashboardMetricsRoute);
+router.route('/', shiftInspectionRoutes);
+router.route('/shift-performance', shiftKpiRoutes);
+router.route('/', worklogReportRoutes);
+router.route('/', monthlyPlanRoutes);
+router.route('/', notificationRoutes);
+router.route('/organization-settings', orgSettingsRoutes);
+router.route('/equipment-shift-log', equipmentShiftLogRoutes);
+router.route('/fuel', fuelRoutes);
+
+
+export default router;

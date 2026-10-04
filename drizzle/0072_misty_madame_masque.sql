@@ -1,0 +1,1 @@
+ALTER TYPE "enum_user_role" ADD VALUE 'assistant_operator';

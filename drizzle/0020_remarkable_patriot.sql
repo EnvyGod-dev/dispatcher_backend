@@ -1,0 +1,1 @@
+ALTER TABLE "daily_plans" DROP COLUMN IF EXISTS "vehicle_type";

@@ -1,0 +1,10 @@
+allowBuilds:
+  '@biomejs/biome': true
+  '@firebase/util': true
+  bcrypt: true
+  core-js: true
+  es5-ext: true
+  esbuild: true
+  protobufjs: true
+  sharp: true
+  workerd: true

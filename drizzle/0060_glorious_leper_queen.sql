@@ -1,0 +1,1 @@
+ALTER TABLE "shift_inspections" ALTER COLUMN "shift_id" DROP DEFAULT;

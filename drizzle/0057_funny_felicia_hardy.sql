@@ -1,0 +1,1 @@
+ALTER TABLE "daily_plans" ADD COLUMN "shift_type" "enum_shift_type" DEFAULT 'day' NOT NULL;

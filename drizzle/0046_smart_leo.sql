@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX IF NOT EXISTS "unique_inspection_active" ON "inspections" ("inspection_type","name","organization_id","vehicle_type") WHERE deleted_at is NULL;

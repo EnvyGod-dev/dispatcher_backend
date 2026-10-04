@@ -1,0 +1,1 @@
+ALTER TABLE "work_logs" ALTER COLUMN "plan_id" DROP NOT NULL;

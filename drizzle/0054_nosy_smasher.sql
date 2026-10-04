@@ -1,0 +1,1 @@
+ALTER TABLE "stockpiles" ADD COLUMN "layer_number" varchar(255);

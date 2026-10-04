@@ -1,0 +1,385 @@
+openapi: 3.0.0
+info:
+  title: Stratum API
+  version: 1.0.0
+  description: This is the API for the Dispatcher System.
+servers:
+  - url: /api
+paths:
+  /ping:
+    get:
+      summary: Ping
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  response:
+                    type: string
+  /sign-in:
+    post:
+      summary: Sign in
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email:
+                  type: string
+                password:
+                  type: string
+      responses:
+        '200':
+          description: Successful response
+        '400':
+          description: Invalid email or password
+  /iam/test:
+    get:
+      summary: Test endpoint
+      responses:
+        '200':
+          description: Successful response
+  /iam/change-password:
+    post:
+      summary: Change password
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                currentPassword:
+                  type: string
+                newPassword:
+                  type: string
+      responses:
+        '200':
+          description: Successful response
+        '400':
+          description: Bad request
+  /iam:
+    get:
+      summary: Get current user
+      responses:
+        '200':
+          description: Successful response
+  /internal/daily-plans:
+    get:
+      summary: Get daily plans of the day
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+        - name: offset
+          in: query
+          schema:
+            type: integer
+        - name: date
+          in: query
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Successful response
+  /internal/inspections:
+    get:
+      summary: Get inspections
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+        - name: offset
+          in: query
+          schema:
+            type: integer
+        - name: vehicleType
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+  /internal/inspection/upload-image:
+    post:
+      summary: Upload inspection image if there's an issue
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '200':
+          description: Successful response
+  /internal/shift-inspection:
+    post:
+      summary: Create shift inspection
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                shiftId:
+                  type: string
+                vehicleId:
+                  type: string
+                inspectionId:
+                  type: string
+                status:
+                  type: string
+                notes:
+                  type: string
+                photoUrl:
+                  type: string
+      responses:
+        '200':
+          description: Successful response
+  /internal/shift-inspections/bulk:
+    post:
+      summary: Create shift inspections in bulk
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                shiftId:
+                  type: string
+                vehicleId:
+                  type: string
+                inspections:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      inspectionId:
+                        type: string
+                      status:
+                        type: string
+                      notes:
+                        type: string
+                      photoUrl:
+                        type: string
+      responses:
+        '201':
+          description: Successful response
+  /internal/shift-inspection/{id}/photo:
+    put:
+      summary: Update shift inspection photo
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                photoUrl:
+                  type: string
+      responses:
+        '200':
+          description: Successful response
+  /internal/mining-block:
+    get:
+      summary: Get mining block
+      parameters:
+        - name: id
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+  /internal/mining-blocks:
+    get:
+      summary: Get mining blocks
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+        - name: offset
+          in: query
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Successful response
+  /internal/route:
+    get:
+      summary: Get route
+      parameters:
+        - name: id
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+  /internal/routes:
+    get:
+      summary: Get routes
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+        - name: offset
+          in: query
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Successful response
+  /internal/shifts:
+    get:
+      summary: Get shifts
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+  /internal/shift/start:
+    post:
+      summary: Start shift
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                vehicleId:
+                  type: string
+                shiftType:
+                  type: string
+                mileageStart:
+                  type: string
+                motoStart:
+                  type: string
+      responses:
+        '200':
+          description: Successful response
+  /internal/shift/end:
+    post:
+      summary: End shift
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                shiftId:
+                  type: string
+                mileageEnd:
+                  type: string
+                motoEnd:
+                  type: string
+                notes:
+                  type: string
+      responses:
+        '200':
+          description: Successful response
+  /internal/vehicles:
+    get:
+      summary: Get vehicles
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+        - name: offset
+          in: query
+          schema:
+            type: integer
+        - name: type
+          in: query
+          schema:
+            type: string
+        - name: name
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+  /internal/vehicle:
+    get:
+      summary: Get vehicle
+      parameters:
+        - name: id
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+  /internal/work-log/start:
+    post:
+      summary: Start work log
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                shiftId:
+                  type: string
+                planId:
+                  type: string
+                transportedAmount:
+                  type: string
+                notes:
+                  type: string
+      responses:
+        '200':
+          description: Successful response
+  /internal/work-log/end:
+    post:
+      summary: End work log
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                worklogId:
+                  type: string
+                status:
+                  type: string
+                transportedAmount:
+                  type: string
+                notes:
+                  type: string
+      responses:
+        '200':
+          description: Successful response

@@ -1,0 +1,1 @@
+ALTER TABLE "daily_plans" ADD COLUMN "vehicle_type" "enum_vehicle_type" NOT NULL;

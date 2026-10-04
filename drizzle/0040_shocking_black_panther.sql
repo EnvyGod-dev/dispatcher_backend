@@ -1,0 +1,1 @@
+ALTER TYPE "enum_vehicle_type" ADD VALUE '';
