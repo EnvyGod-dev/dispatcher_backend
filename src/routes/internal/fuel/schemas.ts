@@ -64,6 +64,8 @@ export const dateStr = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Огноо YYYY-
 export const dateTime = z.string().datetime({ offset: true });
 export const liters = z.number().positive('Хэмжээ 0-ээс их байна.').max(1_000_000);
 export const nonNegative = z.number().min(0).max(1_000_000);
+// Түгээгч тоолуурын заалт 10 оронтой байж болно (fuel_refuelings.meter_* numeric(14, 2)).
+export const meterValue = z.number().min(0).max(9_999_999_999);
 export const optText = (max = 1000) => z.string().trim().max(max).nullable().optional();
 export const boolQuery = z.enum(['true', 'false']).transform((v) => v === 'true');
 
@@ -226,8 +228,8 @@ const refuelingBase = z.object({
   refueledAt: dateTime,
   operationalDate: dateStr.optional(),
   shiftType: shiftTypeEnum.nullable().optional(),
-  meterStart: nonNegative.nullable().optional(),
-  meterEnd: nonNegative.nullable().optional(),
+  meterStart: meterValue.nullable().optional(),
+  meterEnd: meterValue.nullable().optional(),
   operatorId: uuid.optional(),
   receiverOperatorId: uuid.nullable().optional(),
   miningBlockId: uuid.nullable().optional(),
@@ -263,6 +265,32 @@ export const refuelingsQuery = optionalRangeQuery.extend({
   dispenserVehicleId: uuid.optional(),
   tankId: uuid.optional(),
   shiftType: shiftTypeEnum.optional(),
+  includeCancelled: boolQuery.optional(),
+});
+
+export const refuelingUpdateSchema = z
+  .object({
+    receiverVehicleId: uuid.optional(),
+    quantity: liters.nullable().optional(),
+    meterStart: meterValue.nullable().optional(),
+    meterEnd: meterValue.nullable().optional(),
+    refueledAt: dateTime.optional(),
+    operationalDate: dateStr.optional(),
+    shiftType: shiftTypeEnum.nullable().optional(),
+    notes: optText(),
+    reason: z.string().trim().min(3, 'Шалтгаан бичнэ үү.').max(1000),
+  })
+  .strict()
+  .superRefine((v, ctx) => {
+    const { reason: _reason, ...changes } = v;
+
+    if (Object.values(changes).every((value) => value === undefined)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['reason'], message: 'Өөрчлөх талбар оруулна уу.' });
+    }
+  });
+
+export const refuelingCancelSchema = z.object({
+  reason: z.string().trim().min(3, 'Шалтгаан бичнэ үү.').max(1000),
 });
 
 export const openingBalanceSchema = z.object({
