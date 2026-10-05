@@ -12,6 +12,8 @@ export const FUEL_ROLES = {
   supervise: ['superadmin', 'admin', 'dispatcher', 'manager'],
   engineer: ['superadmin', 'admin', 'dispatcher', 'ita', 'manager'],
   manage: ['superadmin', 'admin', 'dispatcher', 'manager'],
+  // Орлогын засвар/цуцлах хүсэлтийг зөвхөн админ батална.
+  approve: ['superadmin', 'admin'],
 } satisfies Record<string, UserRole[]>;
 
 export const orgOf = (c: Context<AppEnv>): string => {

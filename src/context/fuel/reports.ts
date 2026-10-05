@@ -10,6 +10,7 @@ import {
   fuelSuppliers,
   fuelTanks,
   users,
+  vehicleOrganizations,
   vehicles,
 } from '$/libs/database/schema';
 
@@ -31,6 +32,7 @@ import {
   type Granularity,
   L,
   toNumber,
+  toNumberOrNull,
   round,
   assertRange,
 } from './common';
@@ -326,4 +328,147 @@ export const getFuelAuditLogs = async (
     .limit(Math.min(input?.limit ?? 100, 500));
 
   return rows.map((r) => ({ ...r.log, userName: r.userName, userRole: r.userRole }));
+};
+/**
+ * Зарлагын (олголтын) тайлан: техник тус бүр, өдөр/ээлж, эх үүсвэрээр (агуулах, түгээгч машин).
+ * Төрөл, марк, эзэмшигчээр бүлэглэхийг client хийнэ.
+ */
+export const getFuelRefuelBreakdown = async (organizationId: string, from: string, to: string) => {
+  assertRange(from, to);
+
+  const rows = await drizzleDb
+    .select({
+      receiverVehicleId: fuelRefuelings.receiverVehicleId,
+      operationalDate: fuelRefuelings.operationalDate,
+      shiftType: fuelRefuelings.shiftType,
+      quantity: fuelRefuelings.quantity,
+      sourceType: fuelRefuelings.sourceType,
+      tankId: fuelRefuelings.tankId,
+      dispenserVehicleId: fuelRefuelings.dispenserVehicleId,
+      meterStart: fuelRefuelings.meterStart,
+      meterEnd: fuelRefuelings.meterEnd,
+      tankName: fuelTanks.name,
+      mineNumber: vehicles.mineNumber,
+      vehicleName: vehicles.name,
+      vehicleNumber: vehicles.vehicleNumber,
+      model: vehicles.model,
+      type: vehicles.type,
+      owner: vehicleOrganizations.name,
+      dispenserMineNumber: sql<string | null>`(SELECT d.mine_number FROM vehicles d WHERE d.id = ${fuelRefuelings.dispenserVehicleId})`,
+    })
+    .from(fuelRefuelings)
+    .innerJoin(vehicles, eq(vehicles.id, fuelRefuelings.receiverVehicleId))
+    .leftJoin(vehicleOrganizations, eq(vehicleOrganizations.id, vehicles.vehicleOrganizationId))
+    .leftJoin(fuelTanks, eq(fuelTanks.id, fuelRefuelings.tankId))
+    .where(
+      and(
+        eq(fuelRefuelings.organizationId, organizationId),
+        isNull(fuelRefuelings.cancelledAt),
+        gte(fuelRefuelings.operationalDate, from),
+        lte(fuelRefuelings.operationalDate, to),
+      ),
+    );
+
+  const vehicleMap = new Map<
+    string,
+    {
+      vehicleId: string;
+      mineNumber: string | null;
+      name: string;
+      vehicleNumber: string | null;
+      model: string | null;
+      type: string | null;
+      owner: string | null;
+      liters: number;
+      count: number;
+      day: number;
+      night: number;
+    }
+  >();
+  const dayMap = new Map<string, { date: string; day: number; night: number; other: number }>();
+  const sourceMap = new Map<string, { key: string; label: string; kind: string; liters: number; count: number; meterGap: number }>();
+  let total = 0;
+  let day = 0;
+  let night = 0;
+
+  for (const r of rows) {
+    const liters = toNumber(r.quantity);
+    total += liters;
+
+    const v = vehicleMap.get(r.receiverVehicleId) ?? {
+      vehicleId: r.receiverVehicleId,
+      mineNumber: r.mineNumber,
+      name: r.vehicleName,
+      vehicleNumber: r.vehicleNumber,
+      model: r.model,
+      type: r.type,
+      owner: r.owner,
+      liters: 0,
+      count: 0,
+      day: 0,
+      night: 0,
+    };
+    v.liters += liters;
+    v.count += 1;
+
+    const d = dayMap.get(r.operationalDate) ?? { date: r.operationalDate, day: 0, night: 0, other: 0 };
+
+    if (r.shiftType === 'day') {
+      v.day += liters;
+      d.day += liters;
+      day += liters;
+    } else if (r.shiftType === 'night') {
+      v.night += liters;
+      d.night += liters;
+      night += liters;
+    } else {
+      d.other += liters;
+    }
+
+    vehicleMap.set(r.receiverVehicleId, v);
+    dayMap.set(r.operationalDate, d);
+
+    const key = r.sourceType === 'tank' ? `tank:${r.tankId}` : `dispenser:${r.dispenserVehicleId}`;
+    const s = sourceMap.get(key) ?? {
+      key,
+      label: (r.sourceType === 'tank' ? r.tankName : r.dispenserMineNumber) ?? '—',
+      kind: r.sourceType,
+      liters: 0,
+      count: 0,
+      meterGap: 0,
+    };
+    s.liters += liters;
+    s.count += 1;
+
+    // Тоолуураар тооцсон хэмжээ ба бүртгэсэн литрийн зөрүү.
+    const ms = toNumberOrNull(r.meterStart);
+    const me = toNumberOrNull(r.meterEnd);
+
+    if (ms !== null && me !== null) {
+      s.meterGap += me - ms - liters;
+    }
+
+    sourceMap.set(key, s);
+  }
+
+  const r1 = (n: number) => round(n, 1);
+
+  return {
+    from,
+    to,
+    total: r1(total),
+    day: r1(day),
+    night: r1(night),
+    count: rows.length,
+    daysWithRefuel: dayMap.size,
+    days: [...dayMap.values()]
+      .sort((a, b) => a.date.localeCompare(b.date))
+      .map((d) => ({ date: d.date, day: r1(d.day), night: r1(d.night), other: r1(d.other) })),
+    vehicles: [...vehicleMap.values()]
+      .map((v) => ({ ...v, liters: r1(v.liters), day: r1(v.day), night: r1(v.night) }))
+      .sort((a, b) => b.liters - a.liters),
+    sources: [...sourceMap.values()]
+      .map((s) => ({ ...s, liters: r1(s.liters), meterGap: r1(s.meterGap) }))
+      .sort((a, b) => b.liters - a.liters),
+  };
 };

@@ -10,6 +10,7 @@ import {
   and,
   eq,
   isNull,
+  sql,
 } from 'drizzle-orm';
 
 import {
@@ -69,10 +70,24 @@ export const getOrgVehicle = async (db: DbOrTx, organizationId: string, vehicleI
   return vehicle;
 };
 
+/**
+ * Түгээгч (түлшний) машин: тохиргоонд isFuelDispenser гэж тэмдэглэсэн, эсвэл парк дугаар нь
+ * "ST"-ээр эхэлсэн техник (уурхайн түлшний машинууд ST860, ST861 гэх мэт).
+ */
+export const DISPENSER_PREFIX = 'ST';
+
+export const isDispenserVehicle = (vehicle: { isFuelDispenser: boolean | null; mineNumber: string | null; code: string | null }) =>
+  !!vehicle.isFuelDispenser ||
+  (vehicle.mineNumber ?? '').trim().toUpperCase().startsWith(DISPENSER_PREFIX) ||
+  (vehicle.code ?? '').trim().toUpperCase().startsWith(DISPENSER_PREFIX);
+
+export const dispenserVehicleCondition = () =>
+  sql`(${vehicles.isFuelDispenser} = true OR upper(trim(${vehicles.mineNumber})) LIKE ${`${DISPENSER_PREFIX}%`} OR upper(trim(${vehicles.code})) LIKE ${`${DISPENSER_PREFIX}%`})`;
+
 export const getDispenserVehicle = async (db: DbOrTx, organizationId: string, vehicleId: string) => {
   const vehicle = await getOrgVehicle(db, organizationId, vehicleId, 'Түгээх машин');
 
-  if (!vehicle.isFuelDispenser) {
+  if (!isDispenserVehicle(vehicle)) {
     throw new Error(`${vehicle.mineNumber ?? vehicle.name}: түгээх машин (бенз чанагч) гэж тохируулагдаагүй байна.`);
   }
 

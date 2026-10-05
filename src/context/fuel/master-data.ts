@@ -22,6 +22,7 @@ import {
 } from './common';
 
 import {
+  dispenserVehicleCondition,
   getOrgVehicle,
 } from './lookups';
 
@@ -134,7 +135,7 @@ export const getFuelDispensers = async (organizationId: string) => {
     .where(
       and(
         eq(vehicles.organizationId, organizationId),
-        eq(vehicles.isFuelDispenser, true),
+        dispenserVehicleCondition(),
         isNull(vehicles.deletedAt),
       ),
     )

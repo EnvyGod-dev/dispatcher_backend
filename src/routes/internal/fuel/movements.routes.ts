@@ -128,7 +128,7 @@ export const fuelMovementRoutes = new Hono<AppEnv>()
   )
   .post(
     '/receipt-edit-requests/:id/approve',
-    rbac({ roles: FUEL_ROLES.supervise }),
+    rbac({ roles: FUEL_ROLES.approve }),
     zValidator('param', idParam),
     zValidator('json', reviewSchema),
     async (c) => {
@@ -150,7 +150,7 @@ export const fuelMovementRoutes = new Hono<AppEnv>()
   )
   .post(
     '/receipt-edit-requests/:id/reject',
-    rbac({ roles: FUEL_ROLES.supervise }),
+    rbac({ roles: FUEL_ROLES.approve }),
     zValidator('param', idParam),
     zValidator('json', rejectSchema),
     async (c) => {
