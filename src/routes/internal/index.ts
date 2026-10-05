@@ -20,6 +20,7 @@ import worklogReportRoutes from './worklog-report.routes';
 import notificationRoutes from './notification.routes';
 import equipmentShiftLogRoutes from './equipment-shift-log.routes';
 import fuelRoutes from './fuel';
+import miningReportRoutes from './mining-report.routes';
 
 const router = new Hono<AppEnv>();
 
@@ -43,6 +44,7 @@ router.route('/', notificationRoutes);
 router.route('/organization-settings', orgSettingsRoutes);
 router.route('/equipment-shift-log', equipmentShiftLogRoutes);
 router.route('/fuel', fuelRoutes);
+router.route('/', miningReportRoutes);
 
 
 export default router;

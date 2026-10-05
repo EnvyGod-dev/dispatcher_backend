@@ -36,6 +36,7 @@ import logger from '$/utils/logger';
 import type { VehicleType } from '../vehicle/types';
 import type { InspectionStatus } from '../inspection';
 import { getTotalCountSql } from '../helpers';
+import { crewFor } from '$/utils/crew-rotation';
 import { resolveLegacyOperationalDate } from '$/utils/operational-date';
 import { getFuelByShift } from './work-summary';
 
@@ -264,7 +265,8 @@ export const startShift = async (
         .insert(shifts)
         .values({
           ...input,
-          driverShiftGroup: driver.driverShiftGroup,
+          // Ээлжийг (А/Б/В/Г) огноо ба ээлжийн төрлөөс автоматаар тодорхойлно.
+          driverShiftGroup: crewFor(operationalDate, shiftType) ?? driver.driverShiftGroup,
           shiftType,
           operationalDate,
           status: 'started',
@@ -469,6 +471,21 @@ export const updateShift = async (input: UpdateShiftInput) => {
     throw new NotFound();
   }
 
+  // Диспетчер гараар сонгосон ээлжийг л операторын профайлд хадгална.
+  const explicitCrew = input.driverShiftGroup;
+
+  // Огноо эсвэл ээлжийн төрөл өөрчлөгдвөл ээлжийг (А/Б/В/Г) дахин тооцно.
+  if (!explicitCrew && (input.shiftType || input.operationalDate)) {
+    const crew = crewFor(
+      input.operationalDate ?? existingShift.operationalDate,
+      input.shiftType ?? existingShift.shiftType,
+    );
+
+    if (crew) {
+      input = { ...input, driverShiftGroup: crew };
+    }
+  }
+
   // if dispatcher finishes shift or update the vehicle, need to calculate products
   if (
     input.status === 'completed' ||
@@ -485,10 +502,10 @@ export const updateShift = async (input: UpdateShiftInput) => {
         .where(eq(shifts.id, existingShift.id))
         .returning();
 
-      if (input.driverShiftGroup) {
+      if (explicitCrew) {
         await tx
           .update(users)
-          .set({ driverShiftGroup: input.driverShiftGroup })
+          .set({ driverShiftGroup: explicitCrew })
           .where(eq(users.id, existingShift.driverId));
       }
 
@@ -520,10 +537,10 @@ export const updateShift = async (input: UpdateShiftInput) => {
       .where(eq(shifts.id, existingShift.id))
       .returning();
 
-    if (input.driverShiftGroup) {
+    if (explicitCrew) {
       await tx
         .update(users)
-        .set({ driverShiftGroup: input.driverShiftGroup })
+        .set({ driverShiftGroup: explicitCrew })
         .where(eq(users.id, existingShift.driverId));
     }
 

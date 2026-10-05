@@ -18,6 +18,8 @@ import {
   type SQL,
 } from 'drizzle-orm';
 
+import { crewFor, crewLabel } from '$/utils/crew-rotation';
+
 import {
   type ShiftType,
   type Holder,
@@ -307,6 +309,21 @@ export const getFuelRefuelings = async (
       receiverModel: vehicles.model,
       dispenserMineNumber: sql<string | null>`(SELECT d.mine_number FROM vehicles d WHERE d.id = ${fuelRefuelings.dispenserVehicleId})`,
       tankName: fuelTanks.name,
+      // Тухайн ажлын өдөр, ээлжид техникийг жолоодсон оператор (ээлж бүртгэлээс автоматаар).
+      shiftDriverName: sql<string | null>`(
+        SELECT COALESCE(
+          NULLIF(TRIM(CONCAT(CASE WHEN COALESCE(TRIM(u.last_name), '') <> '' THEN LEFT(TRIM(u.last_name), 1) || '.' ELSE '' END, COALESCE(TRIM(u.first_name), ''))), ''),
+          u.name
+        )
+        FROM shifts s
+        JOIN users u ON u.id = s.driver_id
+        WHERE s.vehicle_id = ${fuelRefuelings.receiverVehicleId}
+          AND s.operational_date = ${fuelRefuelings.operationalDate}
+          AND s.shift_type::text = ${fuelRefuelings.shiftType}::text
+          AND s.shift_status <> 'cancelled'
+        ORDER BY s.shift_start DESC
+        LIMIT 1
+      )`,
     })
     .from(fuelRefuelings)
     .innerJoin(vehicles, eq(vehicles.id, fuelRefuelings.receiverVehicleId))
@@ -321,6 +338,10 @@ export const getFuelRefuelings = async (
     receiverModel: r.receiverModel,
     dispenserMineNumber: r.dispenserMineNumber,
     tankName: r.tankName,
+    shiftDriverName: r.shiftDriverName,
+    // Ээлжийг (А/Б/В/Г) ажлын өдөр, ээлжийн төрлөөс автоматаар тооцно.
+    crew: crewFor(r.refueling.operationalDate, r.refueling.shiftType),
+    crewLabel: crewLabel(crewFor(r.refueling.operationalDate, r.refueling.shiftType)),
   }));
 };
 type RefuelingChanges = {
