@@ -9,6 +9,7 @@ import {
   getFuelPeriodSummary,
   getFuelProductionStats,
   getFuelReceiptsBySupplier,
+  getFuelRefuelBreakdown,
   runFuelDailyJob,
   syncFuelProductionFromStratum,
   upsertFuelProductionStat,
@@ -115,6 +116,11 @@ export const fuelAnalyticsRoutes = new Hono<AppEnv>()
     const { from, to } = c.req.valid('query');
 
     return run(async () => c.json(await getFuelReceiptsBySupplier(orgOf(c), from, to)));
+  })
+  .get('/reports/refuel-breakdown', rbac({ roles: FUEL_ROLES.view }), zValidator('query', rangeQuery), async (c) => {
+    const { from, to } = c.req.valid('query');
+
+    return run(async () => c.json(await getFuelRefuelBreakdown(orgOf(c), from, to)));
   })
   .get('/reports/dashboard', rbac({ roles: FUEL_ROLES.view }), zValidator('query', rangeQuery), async (c) => {
     const { from, to } = c.req.valid('query');

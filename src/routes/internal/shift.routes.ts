@@ -8,11 +8,15 @@ import {
   startShift,
   updateShift,
   getActiveShiftByVehicleId,
+  getLastShiftByVehicle,
+  correctLastShiftReadings,
 } from '$/context/shift';
+import { getDriverWorkSummary } from '$/context/shift/work-summary';
 import { getUserByPk } from '$/context/user';
 import { getVehicleByPk } from '$/context/vehicle';
 import {
   enumDriverShiftGroup,
+  enumShiftInspectionStatus,
   enumShiftStatus,
   enumShiftType,
 } from '$/libs/database/schema';
@@ -188,6 +192,17 @@ const shiftRoutes = new Hono<AppEnv>()
         operationalDate: z.string().regex(DATE_ONLY_PATTERN),
         mileageStart: z.coerce.string(),
         motoStart: z.coerce.string(),
+        // Тойрох үзлэг. Шинэ апп ээлж эхлүүлэхийн өмнө бөглүүлж хамт илгээнэ.
+        inspections: z
+          .array(
+            z.object({
+              inspectionId: z.string().uuid(),
+              status: z.enum(enumShiftInspectionStatus.enumValues),
+              notes: z.string().optional(),
+              photoUrl: z.string().optional(),
+            }),
+          )
+          .optional(),
       }),
     ),
     async (c) => {
@@ -240,9 +255,77 @@ const shiftRoutes = new Hono<AppEnv>()
         });
       }
 
-      const shift = await startShift({
-        ...body,
-        driverId: user.id,
+      const { inspections, ...shiftInput } = body;
+
+      const shift = await startShift(
+        {
+          ...shiftInput,
+          driverId: user.id,
+          organizationId: user.organizationId,
+        },
+        inspections,
+      );
+
+      return c.json(shift);
+    },
+  )
+  .get(
+    '/driver/work-summary',
+    zValidator(
+      'query',
+      z.object({
+        from: z.string().regex(DATE_ONLY_PATTERN),
+        to: z.string().regex(DATE_ONLY_PATTERN),
+      }),
+    ),
+    async (c) => {
+      const user = c.get('currentUser');
+
+      if (!user.organizationId) {
+        throw new HTTPException(403, { message: 'Unauthorized' });
+      }
+
+      const { from, to } = c.req.valid('query');
+
+      return c.json(
+        await getDriverWorkSummary({ driverId: user.id, organizationId: user.organizationId, from, to }),
+      );
+    },
+  )
+  .get('/vehicle/:vehicleId/last-shift', zValidator('param', z.object({ vehicleId: z.string().uuid() })), async (c) => {
+    const user = c.get('currentUser');
+
+    if (!user.organizationId) {
+      throw new HTTPException(403, { message: 'Unauthorized' });
+    }
+
+    return c.json(await getLastShiftByVehicle(c.req.valid('param').vehicleId, user.organizationId));
+  })
+  .put(
+    '/vehicle/:vehicleId/last-shift/readings',
+    zValidator('param', z.object({ vehicleId: z.string().uuid() })),
+    zValidator(
+      'json',
+      z
+        .object({
+          shiftId: z.string().uuid(),
+          motoEnd: z.coerce.string().trim().min(1).optional(),
+          mileageEnd: z.coerce.string().trim().min(1).optional(),
+        })
+        .refine((v) => v.motoEnd !== undefined || v.mileageEnd !== undefined, {
+          message: 'Засах заалт оруулна уу.',
+        }),
+    ),
+    async (c) => {
+      const user = c.get('currentUser');
+
+      if (!user.organizationId) {
+        throw new HTTPException(403, { message: 'Unauthorized' });
+      }
+
+      const shift = await correctLastShiftReadings({
+        ...c.req.valid('json'),
+        vehicleId: c.req.valid('param').vehicleId,
         organizationId: user.organizationId,
       });
 

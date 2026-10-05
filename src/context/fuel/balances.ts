@@ -28,6 +28,7 @@ import {
 } from './common';
 
 import {
+  dispenserVehicleCondition,
   holderLabel,
 } from './lookups';
 
@@ -119,8 +120,8 @@ export const getFuelHolderBalances = async (organizationId: string, holderType: 
   if (holderType === 'dispenser') {
     vehicleConditions.push(
       vehicleIds.length > 0
-        ? sql`(${vehicles.isFuelDispenser} = true OR ${inArray(vehicles.id, vehicleIds)})`
-        : eq(vehicles.isFuelDispenser, true),
+        ? sql`(${dispenserVehicleCondition()} OR ${inArray(vehicles.id, vehicleIds)})`
+        : dispenserVehicleCondition(),
     );
   } else {
     if (vehicleIds.length === 0) {

@@ -452,8 +452,43 @@ export const bulkWorkLog = async (input: StartWorkLogInput[]) => {
 
   const shift = await getShiftByPk(firstWorkLog.shiftId);
 
+  /**
+   * Офлайн рейсийг давхар оруулахгүй.
+   *
+   * Сүлжээ муу үед хүсэлт сервер дээр хадгалагдсан ч хариу нь утсанд хүрэхгүй
+   * бол апп дахин илгээдэг байсан тул рейс 2 удаа ордог байв. Нэг ээлжид
+   * (төлөвлөгөө, эхэлсэн цаг) ижил рейс аль хэдийн байвал алгасна.
+   */
+  const keyOf = (planId: string | null | undefined, startTime: string | null | undefined) =>
+    `${planId ?? ''}|${startTime ? new Date(startTime).getTime() : ''}`;
+
   return drizzleDb.transaction(async (tx) => {
-    const created = await tx.insert(workLogs).values(input).returning();
+    // Ижил ээлжийн зэрэг ирсэн bulk хүсэлтүүдийг дараалуулна.
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`work-log-bulk:${firstWorkLog.shiftId}`}))`);
+
+    const existing = await tx
+      .select({ planId: workLogs.planId, startTime: workLogs.startTime })
+      .from(workLogs)
+      .where(eq(workLogs.shiftId, firstWorkLog.shiftId));
+
+    const seen = new Set(existing.map((log) => keyOf(log.planId, log.startTime)));
+    const fresh = input.filter((log) => {
+      const key = keyOf(log.planId, log.startTime);
+
+      if (seen.has(key)) {
+        return false;
+      }
+
+      seen.add(key);
+
+      return true;
+    });
+
+    if (fresh.length === 0) {
+      return [];
+    }
+
+    const created = await tx.insert(workLogs).values(fresh).returning();
 
     await recalculateShiftProducts(tx as typeof drizzleDb, shift);
 
