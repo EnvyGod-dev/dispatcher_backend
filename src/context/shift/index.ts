@@ -37,6 +37,7 @@ import type { VehicleType } from '../vehicle/types';
 import type { InspectionStatus } from '../inspection';
 import { getTotalCountSql } from '../helpers';
 import { resolveLegacyOperationalDate } from '$/utils/operational-date';
+import { getFuelByShift } from './work-summary';
 
 export const getShiftByPk = async (id: string) => {
   return firstOrNull(
@@ -137,7 +138,7 @@ export const getShiftHistory = async (
   },
   { limit, offset }: PaginationType,
 ) => {
-  return drizzleDb.query.shifts.findMany({
+  const rows = await drizzleDb.query.shifts.findMany({
     with: {
       shiftInspections: {
         with: {
@@ -154,6 +155,12 @@ export const getShiftHistory = async (
       workLogs: {
         with: {
           stockpile: true,
+          dailyPlan: {
+            with: {
+              vehicle: true,
+              miningBlock: true,
+            },
+          },
         },
       },
     },
@@ -165,6 +172,16 @@ export const getShiftHistory = async (
     limit,
     offset,
   });
+
+  const organizationId = rows[0]?.organizationId;
+  const fuel = organizationId ? await getFuelByShift(organizationId, rows) : new Map();
+
+  // Тухайн ээлжид техник хэдэн литр түлш авсан.
+  return rows.map((row) => ({
+    ...row,
+    fuelLiters: fuel.get(row.id)?.liters ?? 0,
+    refuelings: fuel.get(row.id)?.items ?? [],
+  }));
 };
 
 export const getShiftCount = async ({
@@ -205,7 +222,20 @@ export const getShiftCount = async ({
 
 type ShiftInsert = typeof shifts.$inferInsert;
 
-export const startShift = async (input: ShiftInsert) => {
+export type StartShiftInspectionInput = {
+  inspectionId: string;
+  status: InspectionStatus;
+  notes?: string;
+  photoUrl?: string;
+};
+
+/**
+ * Ээлж эхлүүлнэ. inspections ирвэл тойрох үзлэгийг ээлжтэй нэг transaction-д хадгална.
+ */
+export const startShift = async (
+  input: ShiftInsert,
+  inspectionResults: StartShiftInspectionInput[] = [],
+) => {
   const shiftType = input.shiftType ?? 'day';
   const operationalDate =
     input.operationalDate ?? resolveLegacyOperationalDate({ shiftType });
@@ -228,16 +258,121 @@ export const startShift = async (input: ShiftInsert) => {
   //   throw new ClientError('Операторт ABCD ээлж тохируулаагүй байна.');
   // }
 
+  return drizzleDb.transaction(async (tx) => {
+    const shift = first(
+      await tx
+        .insert(shifts)
+        .values({
+          ...input,
+          driverShiftGroup: driver.driverShiftGroup,
+          shiftType,
+          operationalDate,
+          status: 'started',
+        })
+        .returning(),
+    );
+
+    if (inspectionResults.length > 0) {
+      await tx.insert(shiftInspections).values(
+        inspectionResults.map((inspection) => ({
+          shiftId: shift.id,
+          vehicleId: shift.vehicleId,
+          driverId: shift.driverId,
+          inspectionId: inspection.inspectionId,
+          status: inspection.status,
+          notes: inspection.notes,
+          photoUrl: inspection.photoUrl,
+        })),
+      );
+    }
+
+    return shift;
+  });
+};
+
+/**
+ * Техникийн хамгийн сүүлийн ээлж (оператор техник сонгоход мото цаг, км-ийг санал болгоно).
+ */
+export const getLastShiftByVehicle = async (vehicleId: string, organizationId: string) => {
+  return firstOrNull(
+    await drizzleDb
+      .select({
+        id: shifts.id,
+        status: shifts.status,
+        shiftType: shifts.shiftType,
+        operationalDate: shifts.operationalDate,
+        shiftStart: shifts.shiftStart,
+        shiftEnd: shifts.shiftEnd,
+        motoStart: shifts.motoStart,
+        motoEnd: shifts.motoEnd,
+        mileageStart: shifts.mileageStart,
+        mileageEnd: shifts.mileageEnd,
+        driverId: shifts.driverId,
+        driverFirstName: users.firstName,
+        driverLastName: users.lastName,
+      })
+      .from(shifts)
+      .leftJoin(users, eq(users.id, shifts.driverId))
+      .where(and(eq(shifts.vehicleId, vehicleId), eq(shifts.organizationId, organizationId)))
+      .orderBy(desc(shifts.createdAt))
+      .limit(1),
+  );
+};
+
+const toReading = (value: string | null | undefined) => {
+  if (value === null || value === undefined || value.trim() === '') {
+    return null;
+  }
+
+  const n = Number(value);
+
+  return Number.isFinite(n) ? n : null;
+};
+
+/**
+ * Өмнөх (хамгийн сүүлийн, дууссан) ээлжийн төгсгөлийн мото цаг, км-ийг оператор шууд засна.
+ * Хүсэлт үүсгэхгүй. Зөвхөн тухайн техникийн хамгийн сүүлийн ээлжид зөвшөөрнө.
+ */
+export const correctLastShiftReadings = async (input: {
+  vehicleId: string;
+  organizationId: string;
+  shiftId: string;
+  motoEnd?: string;
+  mileageEnd?: string;
+}) => {
+  const last = await getLastShiftByVehicle(input.vehicleId, input.organizationId);
+
+  if (!last || last.id !== input.shiftId) {
+    throw new ClientError('Зөвхөн тухайн техникийн хамгийн сүүлийн ээлжийг засах боломжтой.');
+  }
+
+  if (last.status !== 'completed') {
+    throw new ClientError('Дуусаагүй ээлжийн заалтыг засах боломжгүй.');
+  }
+
+  const motoEnd = input.motoEnd ?? last.motoEnd ?? undefined;
+  const mileageEnd = input.mileageEnd ?? last.mileageEnd ?? undefined;
+  const motoStartN = toReading(last.motoStart);
+  const motoEndN = toReading(motoEnd);
+  const mileageStartN = toReading(last.mileageStart);
+  const mileageEndN = toReading(mileageEnd);
+
+  if (motoStartN !== null && motoEndN !== null && motoEndN < motoStartN) {
+    throw new ClientError(`Мото цаг ээлжийн эхлэлийн заалтаас (${last.motoStart}) бага байна.`);
+  }
+
+  if (mileageStartN !== null && mileageEndN !== null && mileageEndN < mileageStartN) {
+    throw new ClientError(`Км ээлжийн эхлэлийн заалтаас (${last.mileageStart}) бага байна.`);
+  }
+
   return first(
     await drizzleDb
-      .insert(shifts)
-      .values({
-        ...input,
-        driverShiftGroup: driver.driverShiftGroup,
-        shiftType,
-        operationalDate,
-        status: 'started',
+      .update(shifts)
+      .set({
+        ...(input.motoEnd !== undefined && { motoEnd: input.motoEnd }),
+        ...(input.mileageEnd !== undefined && { mileageEnd: input.mileageEnd }),
       })
+      .where(eq(shifts.id, last.id))
       .returning(),
   );
 };
