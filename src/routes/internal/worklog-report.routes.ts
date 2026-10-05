@@ -14,7 +14,7 @@ import { DATE_ONLY_PATTERN } from '$/utils/operational-date';
 
 const worklogReportRoutes = new Hono<AppEnv>().get(
   '/worklog-report',
-  rbac({ roles: ['admin', 'dispatcher', 'ita'] }),
+  rbac({ roles: ['superadmin', 'admin', 'dispatcher', 'manager', 'ita'] }),
   zValidator(
     'query',
     z.object({

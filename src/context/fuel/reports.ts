@@ -14,6 +14,8 @@ import {
   vehicles,
 } from '$/libs/database/schema';
 
+import { CREW_LABELS, CREWS, type Crew, crewFor } from '$/utils/crew-rotation';
+
 import {
   and,
   asc,
@@ -387,6 +389,7 @@ export const getFuelRefuelBreakdown = async (organizationId: string, from: strin
   >();
   const dayMap = new Map<string, { date: string; day: number; night: number; other: number }>();
   const sourceMap = new Map<string, { key: string; label: string; kind: string; liters: number; count: number; meterGap: number }>();
+  const crewMap = new Map<Crew, { liters: number; count: number; vehicles: Set<string> }>();
   let total = 0;
   let day = 0;
   let night = 0;
@@ -428,6 +431,16 @@ export const getFuelRefuelBreakdown = async (organizationId: string, from: strin
     vehicleMap.set(r.receiverVehicleId, v);
     dayMap.set(r.operationalDate, d);
 
+    const crew = crewFor(r.operationalDate, r.shiftType);
+
+    if (crew) {
+      const c = crewMap.get(crew) ?? { liters: 0, count: 0, vehicles: new Set<string>() };
+      c.liters += liters;
+      c.count += 1;
+      c.vehicles.add(r.receiverVehicleId);
+      crewMap.set(crew, c);
+    }
+
     const key = r.sourceType === 'tank' ? `tank:${r.tankId}` : `dispenser:${r.dispenserVehicleId}`;
     const s = sourceMap.get(key) ?? {
       key,
@@ -463,7 +476,26 @@ export const getFuelRefuelBreakdown = async (organizationId: string, from: strin
     daysWithRefuel: dayMap.size,
     days: [...dayMap.values()]
       .sort((a, b) => a.date.localeCompare(b.date))
-      .map((d) => ({ date: d.date, day: r1(d.day), night: r1(d.night), other: r1(d.other) })),
+      .map((d) => ({
+        date: d.date,
+        day: r1(d.day),
+        night: r1(d.night),
+        other: r1(d.other),
+        dayCrew: crewFor(d.date, 'day'),
+        nightCrew: crewFor(d.date, 'night'),
+      })),
+    /** Ээлжээр (А/Б/В/Г): ажлын өдөр, ээлжийн төрлөөс автоматаар тооцсон. */
+    crews: CREWS.map((crew) => {
+      const c = crewMap.get(crew);
+
+      return {
+        crew,
+        label: CREW_LABELS[crew],
+        liters: r1(c?.liters ?? 0),
+        count: c?.count ?? 0,
+        vehicles: c?.vehicles.size ?? 0,
+      };
+    }),
     vehicles: [...vehicleMap.values()]
       .map((v) => ({ ...v, liters: r1(v.liters), day: r1(v.day), night: r1(v.night) }))
       .sort((a, b) => b.liters - a.liters),
