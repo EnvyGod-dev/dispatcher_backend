@@ -8,6 +8,7 @@ import {
 } from '$/libs/database/schema';
 import { firstOrNull } from '$/libs/database/utils';
 import worklogRoutes from '$/routes/internal/worklog.routes';
+import { resolveLegacyOperationalDate } from '$/utils/operational-date';
 import Big from 'big.js';
 import { and, count, desc, eq, gte, isNull, lte, ne, sql } from 'drizzle-orm';
 
@@ -200,10 +201,8 @@ export const getTodaysProduct = async ({
     .where(
       and(
         eq(shifts.status, 'completed'),
-        and(
-          gte(sql`DATE(${shifts.createdAt})`, new Date()),
-          lte(sql`DATE(${shifts.createdAt})`, new Date())
-        ),
+        // Одоогийн ажлын өдөр (Улаанбаатарын цагаар; 06:30-аас өмнө бол өмнөх өдрийн шөнийн ээлж).
+        sql`COALESCE(${shifts.operationalDate}, (${shifts.createdAt} AT TIME ZONE 'Asia/Ulaanbaatar')::date) = ${resolveLegacyOperationalDate({ shiftType: 'night' })}`,
         eq(shifts.organizationId, organizationId)
       )
     );

@@ -14,7 +14,8 @@ import {
   vehicles,
 } from '$/libs/database/schema';
 
-import { CREW_LABELS, CREWS, type Crew, crewFor } from '$/utils/crew-rotation';
+import { getCrewResolver } from '$/context/crew-schedule';
+import { CREW_LABELS, CREWS, type Crew } from '$/utils/crew-rotation';
 
 import {
   and,
@@ -338,6 +339,8 @@ export const getFuelAuditLogs = async (
 export const getFuelRefuelBreakdown = async (organizationId: string, from: string, to: string) => {
   assertRange(from, to);
 
+  const resolver = await getCrewResolver(organizationId, from, to);
+
   const rows = await drizzleDb
     .select({
       receiverVehicleId: fuelRefuelings.receiverVehicleId,
@@ -431,7 +434,7 @@ export const getFuelRefuelBreakdown = async (organizationId: string, from: strin
     vehicleMap.set(r.receiverVehicleId, v);
     dayMap.set(r.operationalDate, d);
 
-    const crew = crewFor(r.operationalDate, r.shiftType);
+    const crew = resolver.crewFor(r.operationalDate, r.shiftType);
 
     if (crew) {
       const c = crewMap.get(crew) ?? { liters: 0, count: 0, vehicles: new Set<string>() };
@@ -481,8 +484,8 @@ export const getFuelRefuelBreakdown = async (organizationId: string, from: strin
         day: r1(d.day),
         night: r1(d.night),
         other: r1(d.other),
-        dayCrew: crewFor(d.date, 'day'),
-        nightCrew: crewFor(d.date, 'night'),
+        dayCrew: resolver.crewFor(d.date, 'day'),
+        nightCrew: resolver.crewFor(d.date, 'night'),
       })),
     /** Ээлжээр (А/Б/В/Г): ажлын өдөр, ээлжийн төрлөөс автоматаар тооцсон. */
     crews: CREWS.map((crew) => {

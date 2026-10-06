@@ -89,7 +89,7 @@ export const SORTABLE_COLUMNS = {
 
 export type SortableColumn = keyof typeof SORTABLE_COLUMNS;
 
-const effectiveOperationalDate = sql<string>`COALESCE(${shifts.operationalDate}, ${shifts.createdAt}::date)`;
+const effectiveOperationalDate = sql<string>`COALESCE(${shifts.operationalDate}, (${shifts.createdAt} AT TIME ZONE 'Asia/Ulaanbaatar')::date)`;
 
 // helper to build the order by clause
 const buildOrderBy = (
@@ -167,8 +167,8 @@ export const getShiftReports = async (
       ? sql`${effectiveOperationalDate} = ${operationalDate}`
       : undefined,
     // Use timestamp range instead of DATE() to allow index usage
-    startDate ? gte(shifts.createdAt, `${startDate}T00:00:00`) : undefined,
-    endDate ? lte(shifts.createdAt, `${endDate}T23:59:59`) : undefined,
+    startDate ? sql`${effectiveOperationalDate} >= ${startDate}` : undefined,
+    endDate ? sql`${effectiveOperationalDate} <= ${endDate}` : undefined,
     driverId ? eq(shifts.driverId, driverId) : undefined,
     vehicleId ? eq(shifts.vehicleId, vehicleId) : undefined,
     vehicleOrganizationId
@@ -628,9 +628,9 @@ export const getShiftCount = async ({
           status ? eq(shifts.status, status) : undefined,
           shiftType ? eq(shifts.shiftType, shiftType) : undefined,
           startDate
-            ? gte(sql`DATE(${shifts.createdAt})`, startDate)
+            ? sql`${effectiveOperationalDate} >= ${startDate}`
             : undefined,
-          endDate ? lte(sql`DATE(${shifts.createdAt})`, endDate) : undefined,
+          endDate ? sql`${effectiveOperationalDate} <= ${endDate}` : undefined,
           driverId ? eq(shifts.driverId, driverId) : undefined,
           vehicleId ? eq(shifts.vehicleId, vehicleId) : undefined,
           buildDriverNameFilter(driverName),
@@ -683,8 +683,8 @@ export const getShiftKpi = async ({
     operationalDate
       ? sql`${effectiveOperationalDate} = ${operationalDate}`
       : undefined,
-    gte(sql`DATE(${shifts.createdAt})`, actualStartDate),
-    lte(sql`DATE(${shifts.createdAt})`, actualEndDate),
+    sql`${effectiveOperationalDate} >= ${actualStartDate}`,
+    sql`${effectiveOperationalDate} <= ${actualEndDate}`,
     driverId ? eq(shifts.driverId, driverId) : undefined,
     vehicleId ? eq(shifts.vehicleId, vehicleId) : undefined,
     vehicleOrganizationId

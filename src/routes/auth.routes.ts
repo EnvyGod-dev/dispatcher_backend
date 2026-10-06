@@ -82,6 +82,8 @@ const authRoutes = new Hono()
           body: {
             username: phoneNumber,
             password,
+            // Session-ийг browser хаасан ч хадгална (30 хоног, sliding).
+            rememberMe: true,
           },
           asResponse: true,
         });

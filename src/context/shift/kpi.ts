@@ -26,7 +26,7 @@ type ShiftKpiFilter = {
   miningBlockId?: string;
 };
 
-const effectiveOperationalDate = sql<string>`COALESCE(${shifts.operationalDate}, ${shifts.createdAt}::date)`;
+const effectiveOperationalDate = sql<string>`COALESCE(${shifts.operationalDate}, (${shifts.createdAt} AT TIME ZONE 'Asia/Ulaanbaatar')::date)`;
 
 const resolveShiftIdFilter = async ({
   organizationId,
@@ -116,8 +116,8 @@ export const getTopExca = async ({
         operationalDate
           ? sql`${effectiveOperationalDate} = ${operationalDate}`
           : undefined,
-        gte(sql`DATE(${shifts.createdAt})`, actualStartDate),
-        lte(sql`DATE(${shifts.createdAt})`, actualEndDate),
+        sql`${effectiveOperationalDate} >= ${actualStartDate}`,
+        sql`${effectiveOperationalDate} <= ${actualEndDate}`,
         driverId ? eq(shifts.driverId, driverId) : undefined,
         vehicleId ? eq(shifts.vehicleId, vehicleId) : undefined,
         buildDriverNameFilter(driverName),
@@ -196,8 +196,8 @@ export const getMostActiveDump = async ({
         operationalDate
           ? sql`${effectiveOperationalDate} = ${operationalDate}`
           : undefined,
-        gte(sql`DATE(${shifts.createdAt})`, actualStartDate),
-        lte(sql`DATE(${shifts.createdAt})`, actualEndDate),
+        sql`${effectiveOperationalDate} >= ${actualStartDate}`,
+        sql`${effectiveOperationalDate} <= ${actualEndDate}`,
         driverId ? eq(shifts.driverId, driverId) : undefined,
         vehicleId ? eq(shifts.vehicleId, vehicleId) : undefined,
         buildDriverNameFilter(driverName),
@@ -250,8 +250,8 @@ export const getMostActiveOperators = async ({
     operationalDate
       ? sql`${effectiveOperationalDate} = ${operationalDate}`
       : undefined,
-    gte(sql`DATE(${shifts.createdAt})`, actualStartDate),
-    lte(sql`DATE(${shifts.createdAt})`, actualEndDate),
+    sql`${effectiveOperationalDate} >= ${actualStartDate}`,
+    sql`${effectiveOperationalDate} <= ${actualEndDate}`,
     driverId ? eq(shifts.driverId, driverId) : undefined,
     vehicleId ? eq(shifts.vehicleId, vehicleId) : undefined,
     buildDriverNameFilter(driverName),
@@ -345,7 +345,7 @@ export const getTodayInspections = async ({
   const vehicleInspectionStates = drizzleDb
     .select({
       vehicleId: shifts.vehicleId,
-      inspectionDate: sql<string>`MAX(DATE(${shiftInspections.createdAt}))`.as(
+      inspectionDate: sql<string>`MAX((${shiftInspections.createdAt} AT TIME ZONE 'Asia/Ulaanbaatar')::date)`.as(
         'inspectionDate',
       ),
       highestSeverity: sql<number>`
@@ -372,8 +372,8 @@ export const getTodayInspections = async ({
         operationalDate
           ? sql`${effectiveOperationalDate} = ${operationalDate}`
           : undefined,
-        gte(sql`DATE(${shiftInspections.createdAt})`, actualStartDate),
-        lte(sql`DATE(${shiftInspections.createdAt})`, actualEndDate),
+        sql`${effectiveOperationalDate} >= ${actualStartDate}`,
+        sql`${effectiveOperationalDate} <= ${actualEndDate}`,
         driverId ? eq(shifts.driverId, driverId) : undefined,
         vehicleId ? eq(shifts.vehicleId, vehicleId) : undefined,
         buildDriverNameFilter(driverName),
