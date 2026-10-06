@@ -51,6 +51,14 @@ import {
   insertLedger,
 } from './ledger';
 
+import {
+  advanceMeter,
+  followMeterEdit,
+  getMeterFor,
+  meterDelta,
+  normalizeReading,
+} from './meters';
+
 type CreateRefuelingInput = {
   organizationId: string;
   clientId?: string | null;
@@ -75,16 +83,17 @@ type CreateRefuelingInput = {
   createdBy: string;
 };
 
-const resolveRefuelQuantity = (input: CreateRefuelingInput) => {
-  const meterStart = toNumberOrNull(input.meterStart);
-  const meterEnd = toNumberOrNull(input.meterEnd);
-  const hasMeters = meterStart !== null && meterEnd !== null;
-
-  if (hasMeters && meterEnd < meterStart) {
-    throw new Error('Тоолуурын төгсгөлийн заалт эхлэлээс бага байна.');
-  }
-
-  const meterQuantity = hasMeters ? round(meterEnd - meterStart) : null;
+/**
+ * Хэмжээг тооцно: хэмжээ өгөгдөөгүй бол тоолуурын заалтын зөрүүгээр (дүүрч эргэсэн бол оронгийн тоогоор нөхнө).
+ * Заалтыг бичсэн хэлбэрээр нь (урд талын 0-уудтай) буцаана.
+ */
+export const resolveRefuelQuantity = (
+  input: Pick<CreateRefuelingInput, 'quantity' | 'meterStart' | 'meterEnd'>,
+  digits?: number | null,
+) => {
+  const start = normalizeReading(input.meterStart, digits);
+  const end = normalizeReading(input.meterEnd, digits);
+  const meterQuantity = start && end ? round(meterDelta(start, end, digits)) : null;
   const quantity = toNumberOrNull(input.quantity) ?? meterQuantity;
 
   if (quantity === null || quantity <= 0) {
@@ -93,7 +102,7 @@ const resolveRefuelQuantity = (input: CreateRefuelingInput) => {
 
   const meterMismatch = meterQuantity !== null && Math.abs(meterQuantity - quantity) > Math.max(1, quantity * 0.01);
 
-  return { quantity: round(quantity), meterQuantity, meterMismatch };
+  return { quantity: round(quantity), meterQuantity, meterMismatch, start, end };
 };
 
 export const createFuelRefueling = async (input: CreateRefuelingInput) => {
@@ -117,8 +126,6 @@ export const createFuelRefueling = async (input: CreateRefuelingInput) => {
     throw new Error('Сав шаардлагатай.');
   }
 
-  const { quantity } = resolveRefuelQuantity(input);
-
   try {
     return await drizzleDb.transaction(async (tx) => {
       let sourceHolder: Holder;
@@ -135,6 +142,10 @@ export const createFuelRefueling = async (input: CreateRefuelingInput) => {
         sourceHolder = { holderType: 'tank', tankId: tank.id };
         sourceLabel = tank.name;
       }
+
+      // Эх үүсвэрийн тоолуур (бүртгэгдсэн бол) — оронгийн тоогоор заалтыг нөхөж, дүүрч эргэснийг тооцно.
+      const meter = await getMeterFor(tx, input.organizationId, sourceHolder);
+      const { quantity, start, end } = resolveRefuelQuantity(input, meter?.digits);
 
       const receiver = await getOrgVehicle(tx, input.organizationId, input.receiverVehicleId, 'Хүлээн авагч техник');
       const receiverHolder: Holder = { holderType: 'equipment', vehicleId: receiver.id };
@@ -173,8 +184,10 @@ export const createFuelRefueling = async (input: CreateRefuelingInput) => {
           refueledAt: input.refueledAt,
           operationalDate,
           shiftType: input.shiftType ?? null,
-          meterStart: toNumericOrNull(input.meterStart),
-          meterEnd: toNumericOrNull(input.meterEnd),
+          meterStart: start ? start.value.toString() : null,
+          meterEnd: end ? end.value.toString() : null,
+          meterStartReading: start?.text ?? null,
+          meterEndReading: end?.text ?? null,
           operatorId: input.operatorId,
           receiverOperatorId: input.receiverOperatorId ?? null,
           miningBlockId: input.miningBlockId ?? null,
@@ -206,6 +219,8 @@ export const createFuelRefueling = async (input: CreateRefuelingInput) => {
           refuelingId: refueling.id,
         },
       ]);
+
+      await advanceMeter(tx, meter, end, input.refueledAt, input.createdBy);
 
       await insertAudit(tx, {
         organizationId: input.organizationId,
@@ -419,21 +434,9 @@ export const updateFuelRefueling = async (input: {
     const { changes } = input;
 
     const metersChanged = changes.meterStart !== undefined || changes.meterEnd !== undefined;
-    const meterStart = changes.meterStart !== undefined ? changes.meterStart : before.meterStart;
-    const meterEnd = changes.meterEnd !== undefined ? changes.meterEnd : before.meterEnd;
+    const meterStart = changes.meterStart !== undefined ? changes.meterStart : (before.meterStartReading ?? before.meterStart);
+    const meterEnd = changes.meterEnd !== undefined ? changes.meterEnd : (before.meterEndReading ?? before.meterEnd);
     const quantityInput = changes.quantity !== undefined ? changes.quantity : metersChanged ? null : before.quantity;
-
-    const { quantity } = resolveRefuelQuantity({
-      organizationId: input.organizationId,
-      sourceType: before.sourceType,
-      receiverVehicleId: changes.receiverVehicleId ?? before.receiverVehicleId,
-      quantity: quantityInput,
-      meterStart,
-      meterEnd,
-      refueledAt: changes.refueledAt ?? before.refueledAt,
-      operatorId: before.operatorId,
-      createdBy: input.userId,
-    });
 
     const refueledAt = changes.refueledAt ?? before.refueledAt;
     const operationalDate =
@@ -441,6 +444,11 @@ export const updateFuelRefueling = async (input: {
 
     const oldSource = await sourceHolderOf(tx, before);
     let source = oldSource;
+    const meter = await getMeterFor(tx, input.organizationId, oldSource.holder);
+    const { quantity, start, end } = resolveRefuelQuantity(
+      { quantity: quantityInput, meterStart, meterEnd },
+      meter?.digits,
+    );
 
     if (changes.tankId && changes.tankId !== before.tankId) {
       if (before.sourceType !== 'tank') {
@@ -483,8 +491,10 @@ export const updateFuelRefueling = async (input: {
           ...(source.holder.holderType === 'tank' && { tankId: source.holder.tankId }),
           receiverVehicleId: receiver.id,
           quantity: toNumeric(quantity),
-          meterStart: toNumericOrNull(meterStart),
-          meterEnd: toNumericOrNull(meterEnd),
+          meterStart: start ? start.value.toString() : null,
+          meterEnd: end ? end.value.toString() : null,
+          meterStartReading: start?.text ?? null,
+          meterEndReading: end?.text ?? null,
           refueledAt,
           operationalDate,
           ...(changes.shiftType !== undefined && { shiftType: changes.shiftType }),
@@ -513,6 +523,15 @@ export const updateFuelRefueling = async (input: {
         refuelingId: after.id,
       },
     ]);
+
+    // Тоолуурын одоогийн заалт энэ бичлэгээс гарсан бол засварыг дагуулна.
+    await followMeterEdit(
+      tx,
+      meter,
+      { endReading: before.meterEndReading, at: before.refueledAt },
+      { reading: after.meterEndReading, at: after.refueledAt },
+      input.userId,
+    );
 
     await insertAudit(tx, {
       organizationId: input.organizationId,
@@ -548,6 +567,15 @@ export const cancelFuelRefueling = async (input: {
 
     await lockHolders(tx, input.organizationId, [source.holder, receiverHolder]);
     await tx.delete(fuelLedgerEntries).where(eq(fuelLedgerEntries.refuelingId, before.id));
+
+    // Цуцалсан бичлэг тоолуурын сүүлийн заалтыг өгсөн бол заалтыг эхний заалт руу нь буцаана.
+    await followMeterEdit(
+      tx,
+      await getMeterFor(tx, input.organizationId, source.holder),
+      { endReading: before.meterEndReading, at: before.refueledAt },
+      { reading: before.meterStartReading, at: before.refueledAt },
+      input.userId,
+    );
 
     const after = requireRow(
       await tx

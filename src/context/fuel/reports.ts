@@ -4,6 +4,7 @@ import {
   fuelAlerts,
   fuelAuditLogs,
   fuelIssues,
+  fuelMeters,
   fuelReceiptEditRequests,
   fuelReceipts,
   fuelRefuelings,
@@ -43,6 +44,8 @@ import {
 import {
   getFuelHolderBalances,
 } from './balances';
+
+import { getFuelDispensers } from './master-data';
 
 export const getFuelPeriodSummary = async (
   organizationId: string,
@@ -505,5 +508,214 @@ export const getFuelRefuelBreakdown = async (organizationId: string, from: strin
     sources: [...sourceMap.values()]
       .map((s) => ({ ...s, liters: r1(s.liters), meterGap: r1(s.meterGap) }))
       .sort((a, b) => b.liters - a.liters),
+  };
+};
+
+/**
+ * Агуулах, түгээгч машин бүрээр: хэнээс хэдийг авсан, хэнд хэдийг өгсөн, тоолуурын заалт.
+ * Нийлүүлэгч бүрээр: аль агуулахад хэдэн литр нийлүүлсэн.
+ */
+export const getFuelFlows = async (organizationId: string, from: string, to: string) => {
+  assertRange(from, to);
+
+  const [tanks, dispenserRows, receiptRows, issueRows, refuelRows, closingRows, meters] = await Promise.all([
+    drizzleDb
+      .select({ id: fuelTanks.id, name: fuelTanks.name, fuelType: fuelTanks.fuelType, isActive: fuelTanks.isActive })
+      .from(fuelTanks)
+      .where(eq(fuelTanks.organizationId, organizationId))
+      .orderBy(asc(fuelTanks.name)),
+    getFuelDispensers(organizationId),
+    drizzleDb
+      .select({
+        tankId: fuelReceipts.tankId,
+        supplierId: fuelReceipts.supplierId,
+        supplierName: fuelSuppliers.name,
+        fuelType: fuelReceipts.fuelType,
+        quantity: sql<string>`SUM(${fuelReceipts.quantity})`,
+        count: sql<number>`COUNT(*)::int`,
+        lastReceivedAt: sql<string>`MAX(${fuelReceipts.receivedAt})`,
+      })
+      .from(fuelReceipts)
+      .innerJoin(fuelSuppliers, eq(fuelSuppliers.id, fuelReceipts.supplierId))
+      .where(and(eq(fuelReceipts.organizationId, organizationId), isNull(fuelReceipts.cancelledAt), gte(fuelReceipts.operationalDate, from), lte(fuelReceipts.operationalDate, to)))
+      .groupBy(fuelReceipts.tankId, fuelReceipts.supplierId, fuelSuppliers.name, fuelReceipts.fuelType),
+    drizzleDb
+      .select({
+        tankId: fuelIssues.tankId,
+        dispenserVehicleId: fuelIssues.dispenserVehicleId,
+        quantity: sql<string>`SUM(${fuelIssues.quantity})`,
+        count: sql<number>`COUNT(*)::int`,
+      })
+      .from(fuelIssues)
+      .where(and(eq(fuelIssues.organizationId, organizationId), gte(fuelIssues.operationalDate, from), lte(fuelIssues.operationalDate, to)))
+      .groupBy(fuelIssues.tankId, fuelIssues.dispenserVehicleId),
+    drizzleDb
+      .select({
+        sourceType: fuelRefuelings.sourceType,
+        tankId: fuelRefuelings.tankId,
+        dispenserVehicleId: fuelRefuelings.dispenserVehicleId,
+        quantity: sql<string>`SUM(${fuelRefuelings.quantity})`,
+        count: sql<number>`COUNT(*)::int`,
+        vehicles: sql<number>`COUNT(DISTINCT ${fuelRefuelings.receiverVehicleId})::int`,
+      })
+      .from(fuelRefuelings)
+      .where(and(eq(fuelRefuelings.organizationId, organizationId), isNull(fuelRefuelings.cancelledAt), gte(fuelRefuelings.operationalDate, from), lte(fuelRefuelings.operationalDate, to)))
+      .groupBy(fuelRefuelings.sourceType, fuelRefuelings.tankId, fuelRefuelings.dispenserVehicleId),
+    drizzleDb
+      .select({
+        holderType: L.holderType,
+        tankId: L.tankId,
+        vehicleId: L.vehicleId,
+        balance: sql<string>`SUM(${L.delta})`,
+      })
+      .from(L)
+      .where(and(eq(L.organizationId, organizationId), lte(L.operationalDate, to)))
+      .groupBy(L.holderType, L.tankId, L.vehicleId),
+    drizzleDb.select().from(fuelMeters).where(eq(fuelMeters.organizationId, organizationId)),
+  ]);
+
+  // Хугацааны эхний ба сүүлийн тоолуурын заалт (эх үүсвэр бүрээр).
+  const readingRows = await drizzleDb.execute<{
+    holder_type: 'tank' | 'dispenser';
+    holder_id: string;
+    first_reading: string | null;
+    last_reading: string | null;
+  }>(sql`
+    WITH m AS (
+      SELECT 'tank' AS holder_type, tank_id AS holder_id, issued_at AS at, meter_start_reading AS start_r, meter_end_reading AS end_r
+      FROM fuel_issues
+      WHERE organization_id = ${organizationId} AND operational_date BETWEEN ${from} AND ${to} AND meter_end_reading IS NOT NULL
+      UNION ALL
+      SELECT source_type::text, COALESCE(tank_id, dispenser_vehicle_id), refueled_at, meter_start_reading, meter_end_reading
+      FROM fuel_refuelings
+      WHERE organization_id = ${organizationId} AND cancelled_at IS NULL
+        AND operational_date BETWEEN ${from} AND ${to} AND meter_end_reading IS NOT NULL
+    )
+    SELECT holder_type, holder_id,
+      (ARRAY_AGG(start_r ORDER BY at ASC))[1] AS first_reading,
+      (ARRAY_AGG(end_r ORDER BY at DESC))[1] AS last_reading
+    FROM m
+    GROUP BY holder_type, holder_id
+  `);
+
+  const readingBy = new Map(readingRows.rows.map((r) => [`${r.holder_type}:${r.holder_id}`, r]));
+  const meterBy = new Map(meters.map((m) => [`${m.holderType}:${m.tankId ?? m.vehicleId}`, m]));
+  const closingBy = new Map(closingRows.map((r) => [`${r.holderType}:${r.tankId ?? r.vehicleId}`, round(toNumber(r.balance))]));
+  const tankName = new Map(tanks.map((t) => [t.id, t.name]));
+  const dispenserName = new Map(dispenserRows.map((d) => [d.id, d.mineNumber ?? d.name]));
+
+  const meterInfo = (key: string) => {
+    const meter = meterBy.get(key);
+    const readings = readingBy.get(key);
+
+    return {
+      meter: meter ? { id: meter.id, digits: meter.digits, reading: meter.reading, readingAt: meter.readingAt } : null,
+      firstReading: readings?.first_reading ?? null,
+      lastReading: readings?.last_reading ?? null,
+    };
+  };
+
+  const tankRows = tanks
+    .map((t) => {
+      const receipts = receiptRows.filter((r) => r.tankId === t.id);
+      const issues = issueRows.filter((r) => r.tankId === t.id);
+      const direct = refuelRows.filter((r) => r.sourceType === 'tank' && r.tankId === t.id);
+      const received = round(receipts.reduce((s, r) => s + toNumber(r.quantity), 0));
+      const issued = round(issues.reduce((s, r) => s + toNumber(r.quantity), 0));
+      const refueled = round(direct.reduce((s, r) => s + toNumber(r.quantity), 0));
+
+      return {
+        id: t.id,
+        name: t.name,
+        fuelType: t.fuelType,
+        isActive: t.isActive,
+        received,
+        suppliers: receipts
+          .map((r) => ({
+            supplierId: r.supplierId,
+            name: r.supplierName,
+            quantity: round(toNumber(r.quantity)),
+            count: r.count,
+          }))
+          .sort((a, b) => b.quantity - a.quantity),
+        issued,
+        refueled,
+        given: round(issued + refueled),
+        givenCount: issues.reduce((s, r) => s + r.count, 0) + direct.reduce((s, r) => s + r.count, 0),
+        toDispensers: issues
+          .map((r) => ({
+            dispenserVehicleId: r.dispenserVehicleId,
+            name: dispenserName.get(r.dispenserVehicleId) ?? '—',
+            quantity: round(toNumber(r.quantity)),
+            count: r.count,
+          }))
+          .sort((a, b) => b.quantity - a.quantity),
+        closing: closingBy.get(`tank:${t.id}`) ?? 0,
+        ...meterInfo(`tank:${t.id}`),
+      };
+    })
+    .filter((t) => t.isActive || t.received || t.given || t.closing);
+
+  const dispensers = dispenserRows
+    .map((d) => {
+      const issues = issueRows.filter((r) => r.dispenserVehicleId === d.id);
+      const refuels = refuelRows.filter((r) => r.sourceType === 'dispenser' && r.dispenserVehicleId === d.id);
+      const received = round(issues.reduce((s, r) => s + toNumber(r.quantity), 0));
+      const given = round(refuels.reduce((s, r) => s + toNumber(r.quantity), 0));
+
+      return {
+        id: d.id,
+        name: d.mineNumber ?? d.name,
+        received,
+        fromTanks: issues
+          .map((r) => ({ tankId: r.tankId, name: tankName.get(r.tankId) ?? '—', quantity: round(toNumber(r.quantity)) }))
+          .sort((a, b) => b.quantity - a.quantity),
+        given,
+        givenCount: refuels.reduce((s, r) => s + r.count, 0),
+        vehicles: refuels.reduce((s, r) => s + r.vehicles, 0),
+        closing: closingBy.get(`dispenser:${d.id}`) ?? 0,
+        ...meterInfo(`dispenser:${d.id}`),
+      };
+    })
+    .filter((d) => d.received || d.given || d.closing || d.meter);
+
+  const supplierMap = new Map<
+    string,
+    { supplierId: string; name: string; quantity: number; count: number; lastReceivedAt: string | null; tanks: { tankId: string; name: string; quantity: number }[] }
+  >();
+
+  for (const r of receiptRows) {
+    const s = supplierMap.get(r.supplierId) ?? {
+      supplierId: r.supplierId,
+      name: r.supplierName,
+      quantity: 0,
+      count: 0,
+      lastReceivedAt: null,
+      tanks: [],
+    };
+
+    s.quantity = round(s.quantity + toNumber(r.quantity));
+    s.count += r.count;
+    if (!s.lastReceivedAt || (r.lastReceivedAt && r.lastReceivedAt > s.lastReceivedAt)) s.lastReceivedAt = r.lastReceivedAt;
+    s.tanks.push({ tankId: r.tankId, name: tankName.get(r.tankId) ?? '—', quantity: round(toNumber(r.quantity)) });
+    supplierMap.set(r.supplierId, s);
+  }
+
+  const suppliers = [...supplierMap.values()]
+    .map((s) => ({ ...s, tanks: s.tanks.sort((a, b) => b.quantity - a.quantity) }))
+    .sort((a, b) => b.quantity - a.quantity);
+
+  return {
+    from,
+    to,
+    totals: {
+      received: round(tankRows.reduce((s, t) => s + t.received, 0)),
+      issued: round(tankRows.reduce((s, t) => s + t.issued, 0)),
+      refueledFromTank: round(tankRows.reduce((s, t) => s + t.refueled, 0)),
+      refueledFromDispenser: round(dispensers.reduce((s, d) => s + d.given, 0)),
+    },
+    tanks: tankRows,
+    dispensers,
+    suppliers,
   };
 };

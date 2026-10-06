@@ -73,8 +73,14 @@ export const dateStr = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Огноо YYYY-
 export const dateTime = z.string().datetime({ offset: true });
 export const liters = z.number().positive('Хэмжээ 0-ээс их байна.').max(1_000_000);
 export const nonNegative = z.number().min(0).max(1_000_000);
-// Түгээгч тоолуурын заалт 10 оронтой байж болно (fuel_refuelings.meter_* numeric(14, 2)).
-export const meterValue = z.number().min(0).max(9_999_999_999);
+/**
+ * Тоолуурын заалт: урд талын 0-уудтай цифр string (жишээ нь "0001234"), хуучин апп тоо илгээнэ.
+ * Оронгийн хязгаарыг тухайн тоолуурын тохиргоо (digits) шийднэ — энд хязгаарлахгүй.
+ */
+export const meterValue = z.union([
+  z.string().trim().regex(/^\d*$/, 'Тоолуурын заалт зөвхөн цифр байна.'),
+  z.number().int('Тоолуурын заалт бүхэл тоо байна.').min(0),
+]);
 export const optText = (max = 1000) => z.string().trim().max(max).nullable().optional();
 export const boolQuery = z.enum(['true', 'false']).transform((v) => v === 'true');
 
@@ -212,15 +218,43 @@ export const reviewSchema = z.object({ note: optText() });
 
 export const rejectSchema = z.object({ note: z.string().trim().min(3).max(1000) });
 
-export const issueSchema = z.object({
-  tankId: uuid,
-  dispenserVehicleId: uuid,
-  quantity: liters,
-  issuedAt: dateTime,
-  operationalDate: dateStr.optional(),
-  issuedBy: uuid.optional(),
+const hasReading = (v: string | number | null | undefined) => v !== null && v !== undefined && v !== '';
+
+export const issueSchema = z
+  .object({
+    tankId: uuid,
+    dispenserVehicleId: uuid,
+    quantity: liters.nullable().optional(),
+    meterStart: meterValue.nullable().optional(),
+    meterEnd: meterValue.nullable().optional(),
+    issuedAt: dateTime,
+    operationalDate: dateStr.optional(),
+    issuedBy: uuid.optional(),
+    notes: optText(),
+  })
+  .superRefine((v, ctx) => {
+    if (v.quantity == null && (!hasReading(v.meterStart) || !hasReading(v.meterEnd))) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['quantity'], message: 'Хэмжээ эсвэл тоолуурын заалт оруулна уу.' });
+    }
+  });
+
+export const meterCreateSchema = z.object({
+  holderType: z.enum(['tank', 'dispenser']),
+  holderId: uuid,
+  digits: z.number().int().min(1, 'Оронгийн тоо 1-ээс их.').max(30),
+  reading: z.string().trim().regex(/^\d+$/, 'Заалт зөвхөн цифр байна.'),
+  readingAt: dateTime.optional(),
   notes: optText(),
 });
+
+export const meterUpdateSchema = z
+  .object({
+    digits: z.number().int().min(1).max(30).optional(),
+    reading: z.string().trim().regex(/^\d+$/, 'Заалт зөвхөн цифр байна.').optional(),
+    readingAt: dateTime.optional(),
+    notes: optText(),
+  })
+  .refine((v) => Object.values(v).some((x) => x !== undefined), { message: 'Өөрчлөх талбар оруулна уу.' });
 
 export const issuesQuery = optionalRangeQuery.extend({
   tankId: uuid.optional(),
@@ -258,7 +292,7 @@ const refuelingRefine = (v: z.infer<typeof refuelingBase>, ctx: z.RefinementCtx)
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['tankId'], message: 'Сав заавал.' });
   }
 
-  if (v.quantity == null && (v.meterStart == null || v.meterEnd == null)) {
+  if (v.quantity == null && (!hasReading(v.meterStart) || !hasReading(v.meterEnd))) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['quantity'], message: 'Хэмжээ эсвэл тоолуурын заалт оруулна уу.' });
   }
 };
