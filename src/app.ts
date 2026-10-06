@@ -6,7 +6,7 @@ import { secureHeaders } from 'hono/secure-headers';
 import { timing } from 'hono/timing';
 
 import { authMiddleware } from './middlewares/auth.middleware';
-import { organizationScope } from './middlewares/rbac.middleware';
+import { organizationScope, readOnlyRoleGuard } from './middlewares/rbac.middleware';
 import errorHandler from './middlewares/error.middleware';
 
 import adminRoutes from './routes/admin';
@@ -227,6 +227,13 @@ const app = new Hono<AppEnv>()
    * organization-specific тул scope тавина.
    */
   .use('/internal/*', organizationScope)
+
+  /**
+   * Удирдлага (manager) зөвхөн харна: internal, resource дээр өөрчлөх хүсэлтийг хаана.
+   */
+  .use('/internal/*', readOnlyRoleGuard)
+
+  .use('/resource/*', readOnlyRoleGuard)
 
   /**
    * ❌ IAM болон Superadmin дээр

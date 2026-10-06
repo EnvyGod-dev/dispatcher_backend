@@ -15,7 +15,7 @@ import { z } from 'zod';
 const monthlyPlanRoutes = new Hono<AppEnv>()
   .get(
     '/monthly-plans',
-    rbac({ roles: ['dispatcher', 'admin', 'ita'] }),
+    rbac({ roles: ['manager', 'dispatcher', 'admin', 'ita'] }),
     zValidator(
       'query',
       z.object({

@@ -23,7 +23,7 @@ const markshaderRoutes = new Hono<AppEnv>()
 
   .get(
     '/reports',
-    rbac({ roles: ['markscheider', 'admin', 'dispatcher'] }),
+    rbac({ roles: ['manager', 'markscheider', 'admin', 'dispatcher'] }),
     zValidator(
       'query',
       z.object({
@@ -57,7 +57,7 @@ const markshaderRoutes = new Hono<AppEnv>()
   // =====================
   .get(
     '/report',
-    rbac({ roles: ['markscheider', 'admin', 'dispatcher'] }),
+    rbac({ roles: ['manager', 'markscheider', 'admin', 'dispatcher'] }),
     zValidator('query', z.object({ id: z.string().uuid() })),
     async (c) => {
       const { id } = c.req.valid('query');
@@ -191,7 +191,7 @@ const markshaderRoutes = new Hono<AppEnv>()
   // =====================
   .get(
     '/stats',
-    rbac({ roles: ['markscheider', 'admin', 'dispatcher'] }),
+    rbac({ roles: ['manager', 'markscheider', 'admin', 'dispatcher'] }),
     zValidator(
       'query',
       z.object({
@@ -219,7 +219,7 @@ const markshaderRoutes = new Hono<AppEnv>()
   // =====================
   .get(
     '/actual-production',
-    rbac({ roles: ['markscheider', 'admin', 'dispatcher'] }),
+    rbac({ roles: ['manager', 'markscheider', 'admin', 'dispatcher'] }),
     zValidator(
       'query',
       z.object({
@@ -247,7 +247,7 @@ const markshaderRoutes = new Hono<AppEnv>()
   // =====================
   .get(
     '/excavators',
-    rbac({ roles: ['markscheider', 'admin', 'dispatcher'] }),
+    rbac({ roles: ['manager', 'markscheider', 'admin', 'dispatcher'] }),
     zValidator(
       'query',
       z.object({
@@ -398,7 +398,7 @@ const markshaderRoutes = new Hono<AppEnv>()
   // =====================
   .get(
     '/export',
-    rbac({ roles: ['markscheider', 'admin', 'dispatcher'] }),
+    rbac({ roles: ['manager', 'markscheider', 'admin', 'dispatcher'] }),
     zValidator(
       'query',
       z.object({

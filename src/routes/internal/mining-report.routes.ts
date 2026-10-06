@@ -22,7 +22,7 @@ import { z } from 'zod';
 const MINING_REPORT_ROLES = ['superadmin', 'admin', 'dispatcher', 'manager', 'ita', 'markscheider'] as const;
 
 /** Ээлжийн хуваарь засах эрх. */
-const CREW_MANAGE_ROLES = ['superadmin', 'admin', 'dispatcher', 'manager'] as const;
+const CREW_MANAGE_ROLES = ['superadmin', 'admin', 'dispatcher'] as const;
 
 const crewEnum = z.enum(CREWS);
 
