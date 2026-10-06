@@ -98,7 +98,7 @@ export const fuelMasterRoutes = new Hono<AppEnv>()
   .get('/suppliers', rbac({ roles: FUEL_ROLES.view }), async (c) => {
     return c.json(await getFuelSuppliers(orgOf(c)));
   })
-  .post('/suppliers', rbac({ roles: FUEL_ROLES.operate }), zValidator('json', supplierSchema), async (c) => {
+  .post('/suppliers', rbac({ roles: FUEL_ROLES.register }), zValidator('json', supplierSchema), async (c) => {
     const body = c.req.valid('json');
 
     return run(async () => {

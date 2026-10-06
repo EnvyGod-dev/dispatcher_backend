@@ -177,3 +177,29 @@ export const organizationScope: MiddlewareHandler =
 
     await next();
   };
+/**
+ * Зөвхөн харах эрхтэй дүрүүд (удирдлага). Эдгээр хэрэглэгч ямар ч өгөгдөл өөрчлөх (POST/PUT/PATCH/DELETE)
+ * хүсэлт явуулж чадахгүй — зөвхөн тайлан, мэдээлэл харна.
+ */
+export const READ_ONLY_ROLES = ['manager'] as const;
+
+/** Зөвхөн харах хэрэглэгчид зөвшөөрөх бичих хүсэлтүүд (өөрийн төхөөрөмжийн мэдэгдлийн токен). */
+const READ_ONLY_WRITE_ALLOWLIST = [/\/save-firebase-token$/, /\/device-tokens$/];
+
+export const readOnlyRoleGuard: MiddlewareHandler = async (c, next) => {
+  const currentUser = c.get('currentUser');
+  const method = c.req.method.toUpperCase();
+
+  if (
+    currentUser &&
+    (READ_ONLY_ROLES as readonly string[]).includes(currentUser.role) &&
+    !['GET', 'HEAD', 'OPTIONS'].includes(method) &&
+    !READ_ONLY_WRITE_ALLOWLIST.some((pattern) => pattern.test(c.req.path))
+  ) {
+    throw new HTTPException(403, {
+      message: 'Таны эрх зөвхөн харах (тайлан) эрх тул өөрчлөлт хийх боломжгүй.',
+    });
+  }
+
+  await next();
+};

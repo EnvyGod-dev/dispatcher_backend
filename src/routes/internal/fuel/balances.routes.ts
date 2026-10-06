@@ -71,7 +71,7 @@ export const fuelBalanceRoutes = new Hono<AppEnv>()
       return c.json(await getFuelOpeningBalances(orgOf(c), c.req.valid('query').holderType));
     },
   )
-  .post('/opening-balances', rbac({ roles: FUEL_ROLES.operate }), zValidator('json', openingBalanceSchema), async (c) => {
+  .post('/opening-balances', rbac({ roles: FUEL_ROLES.register }), zValidator('json', openingBalanceSchema), async (c) => {
     const { holderId, ...body } = c.req.valid('json');
 
     return run(async () => {
@@ -89,7 +89,7 @@ export const fuelBalanceRoutes = new Hono<AppEnv>()
   .get('/measurements', rbac({ roles: FUEL_ROLES.view }), zValidator('query', measurementsQuery), async (c) => {
     return c.json(await getFuelMeasurements(orgOf(c), c.req.valid('query')));
   })
-  .post('/measurements', rbac({ roles: FUEL_ROLES.operate }), zValidator('json', measurementSchema), async (c) => {
+  .post('/measurements', rbac({ roles: FUEL_ROLES.register }), zValidator('json', measurementSchema), async (c) => {
     const { holderId, applyAdjustment, ...body } = c.req.valid('json');
     const user = userOf(c);
     const canAdjust = (FUEL_ROLES.supervise as readonly string[]).includes(user.role);

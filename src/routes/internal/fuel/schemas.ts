@@ -5,15 +5,20 @@ import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
 
 export const FUEL_ROLES = {
-  // fuel_operator: вебэд зөвхөн харна, mobile-аас цэнэглэлт/орлого бүртгэнэ.
+  // Харах: удирдлага (manager), ИТА зөвхөн харна.
   view: ['superadmin', 'admin', 'fuel_operator', 'dispatcher', 'ita', 'manager'],
-  operate: ['superadmin', 'admin', 'fuel_operator', 'dispatcher', 'manager'],
-  // Хяналт, засвар, тохиргоо: admin, dispatcher, manager.
-  supervise: ['superadmin', 'admin', 'dispatcher', 'manager'],
-  engineer: ['superadmin', 'admin', 'dispatcher', 'ita', 'manager'],
-  manage: ['superadmin', 'admin', 'dispatcher', 'manager'],
-  // Орлогын засвар/цуцлах хүсэлтийг зөвхөн админ батална.
-  approve: ['superadmin', 'admin'],
+  // Түлш олгох (цэнэглэлт): түлшний ажилтан, диспетчер, админ.
+  operate: ['superadmin', 'admin', 'fuel_operator', 'dispatcher'],
+  // Орлого, зарлага, нийлүүлэгч, хэмжилт, эхний үлдэгдэл бүртгэх: зөвхөн диспетчер, админ.
+  register: ['superadmin', 'admin', 'dispatcher'],
+  // Цэнэглэлт засах/цуцлах, аудит: диспетчер, админ.
+  supervise: ['superadmin', 'admin', 'dispatcher'],
+  // Норм, анхааруулга, бүтээл: диспетчер, админ, ИТА.
+  engineer: ['superadmin', 'admin', 'dispatcher', 'ita'],
+  // Агуулах, тохиргоо, хүлээн авагч: диспетчер, админ.
+  manage: ['superadmin', 'admin', 'dispatcher'],
+  // Орлогын засвар/цуцлах хүсэлт батлах: диспетчер, админ.
+  approve: ['superadmin', 'admin', 'dispatcher'],
 } satisfies Record<string, UserRole[]>;
 
 export const orgOf = (c: Context<AppEnv>): string => {

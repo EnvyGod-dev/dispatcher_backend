@@ -45,7 +45,7 @@ export const fuelMovementRoutes = new Hono<AppEnv>()
   .get('/receipts', rbac({ roles: FUEL_ROLES.view }), zValidator('query', receiptsQuery), async (c) => {
     return c.json(await getFuelReceipts(orgOf(c), c.req.valid('query')));
   })
-  .post('/receipts', rbac({ roles: FUEL_ROLES.operate }), zValidator('json', receiptSchema), async (c) => {
+  .post('/receipts', rbac({ roles: FUEL_ROLES.register }), zValidator('json', receiptSchema), async (c) => {
     const body = c.req.valid('json');
     const user = userOf(c);
 
@@ -62,7 +62,7 @@ export const fuelMovementRoutes = new Hono<AppEnv>()
   })
   .put(
     '/receipts/:id/act-file',
-    rbac({ roles: FUEL_ROLES.operate }),
+    rbac({ roles: FUEL_ROLES.register }),
     zValidator('param', idParam),
     zValidator('json', actFileSchema),
     async (c) => {
@@ -81,7 +81,7 @@ export const fuelMovementRoutes = new Hono<AppEnv>()
       });
     },
   )
-  .post('/receipts/:id/act/resend', rbac({ roles: FUEL_ROLES.operate }), zValidator('param', idParam), async (c) => {
+  .post('/receipts/:id/act/resend', rbac({ roles: FUEL_ROLES.register }), zValidator('param', idParam), async (c) => {
     return run(async () => {
       const result = await sendFuelReceiptActEmail({
         organizationId: orgOf(c),
@@ -97,7 +97,7 @@ export const fuelMovementRoutes = new Hono<AppEnv>()
   })
   .post(
     '/receipts/:id/edit-requests',
-    rbac({ roles: FUEL_ROLES.operate }),
+    rbac({ roles: FUEL_ROLES.register }),
     zValidator('param', idParam),
     zValidator('json', editRequestSchema),
     async (c) => {
@@ -174,7 +174,7 @@ export const fuelMovementRoutes = new Hono<AppEnv>()
   .get('/issues', rbac({ roles: FUEL_ROLES.view }), zValidator('query', issuesQuery), async (c) => {
     return c.json(await getFuelIssues(orgOf(c), c.req.valid('query')));
   })
-  .post('/issues', rbac({ roles: FUEL_ROLES.operate }), zValidator('json', issueSchema), async (c) => {
+  .post('/issues', rbac({ roles: FUEL_ROLES.register }), zValidator('json', issueSchema), async (c) => {
     const body = c.req.valid('json');
     const user = userOf(c);
 
