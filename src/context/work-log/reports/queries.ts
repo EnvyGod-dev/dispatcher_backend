@@ -35,7 +35,7 @@ type WorkLogInput = {
   shiftType?: ShiftType;
 };
 
-const effectiveOperationalDate = sql<string>`COALESCE(${shifts.operationalDate}, ${shifts.createdAt}::date)`;
+const effectiveOperationalDate = sql<string>`COALESCE(${shifts.operationalDate}, (${shifts.createdAt} AT TIME ZONE 'Asia/Ulaanbaatar')::date)`;
 
 const getFilteredShiftIds = async (
   {
@@ -61,8 +61,8 @@ const getFilteredShiftIds = async (
     operationalDate
       ? sql`${effectiveOperationalDate} = ${operationalDate}`
       : undefined,
-    startDate ? gte(shifts.createdAt, `${startDate}T00:00:00`) : undefined,
-    endDate ? lte(shifts.createdAt, `${endDate}T23:59:59`) : undefined,
+    startDate ? sql`${effectiveOperationalDate} >= ${startDate}` : undefined,
+    endDate ? sql`${effectiveOperationalDate} <= ${endDate}` : undefined,
     driverId ? eq(shifts.driverId, driverId) : undefined,
     vehicleId ? eq(shifts.vehicleId, vehicleId) : undefined
   );

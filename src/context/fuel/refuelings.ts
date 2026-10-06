@@ -18,7 +18,8 @@ import {
   type SQL,
 } from 'drizzle-orm';
 
-import { crewFor, crewLabel } from '$/utils/crew-rotation';
+import { getCrewResolver } from '$/context/crew-schedule';
+import { crewLabel } from '$/utils/crew-rotation';
 
 import {
   type ShiftType,
@@ -331,18 +332,27 @@ export const getFuelRefuelings = async (
     .where(and(...conditions))
     .orderBy(desc(fuelRefuelings.refueledAt));
 
-  return rows.map((r) => ({
-    ...r.refueling,
-    receiverMineNumber: r.receiverMineNumber,
-    receiverName: r.receiverName,
-    receiverModel: r.receiverModel,
-    dispenserMineNumber: r.dispenserMineNumber,
-    tankName: r.tankName,
-    shiftDriverName: r.shiftDriverName,
-    // Ээлжийг (А/Б/В/Г) ажлын өдөр, ээлжийн төрлөөс автоматаар тооцно.
-    crew: crewFor(r.refueling.operationalDate, r.refueling.shiftType),
-    crewLabel: crewLabel(crewFor(r.refueling.operationalDate, r.refueling.shiftType)),
-  }));
+  const dates = rows.map((r) => r.refueling.operationalDate).sort();
+  const resolver = dates.length
+    ? await getCrewResolver(organizationId, dates[0]!, dates[dates.length - 1]!)
+    : null;
+
+  return rows.map((r) => {
+    // Ээлжийг (А/Б/В/Г) хуваариас ажлын өдөр, ээлжийн төрлөөр автоматаар тооцно.
+    const crew = resolver?.crewFor(r.refueling.operationalDate, r.refueling.shiftType) ?? null;
+
+    return {
+      ...r.refueling,
+      receiverMineNumber: r.receiverMineNumber,
+      receiverName: r.receiverName,
+      receiverModel: r.receiverModel,
+      dispenserMineNumber: r.dispenserMineNumber,
+      tankName: r.tankName,
+      shiftDriverName: r.shiftDriverName,
+      crew,
+      crewLabel: crewLabel(crew),
+    };
+  });
 };
 type RefuelingChanges = {
   tankId?: string;

@@ -36,7 +36,7 @@ import logger from '$/utils/logger';
 import type { VehicleType } from '../vehicle/types';
 import type { InspectionStatus } from '../inspection';
 import { getTotalCountSql } from '../helpers';
-import { crewFor } from '$/utils/crew-rotation';
+import { resolveCrew } from '$/context/crew-schedule';
 import { resolveLegacyOperationalDate } from '$/utils/operational-date';
 import { getFuelByShift } from './work-summary';
 
@@ -259,14 +259,17 @@ export const startShift = async (
   //   throw new ClientError('Операторт ABCD ээлж тохируулаагүй байна.');
   // }
 
+  const crew = await resolveCrew(input.organizationId, operationalDate, shiftType);
+
   return drizzleDb.transaction(async (tx) => {
     const shift = first(
       await tx
         .insert(shifts)
         .values({
           ...input,
-          // Ээлжийг (А/Б/В/Г) огноо ба ээлжийн төрлөөс автоматаар тодорхойлно.
-          driverShiftGroup: crewFor(operationalDate, shiftType) ?? driver.driverShiftGroup,
+          // Ээлжийг (А/Б/В/Г) хуваариас (вебээс оруулсан эсвэл үндсэн дүрэм) огноо, ээлжийн
+          // төрлөөр тодорхойлно. Операторын профайл дахь ээлжийг ашиглахгүй.
+          driverShiftGroup: crew,
           shiftType,
           operationalDate,
           status: 'started',
@@ -476,7 +479,8 @@ export const updateShift = async (input: UpdateShiftInput) => {
 
   // Огноо эсвэл ээлжийн төрөл өөрчлөгдвөл ээлжийг (А/Б/В/Г) дахин тооцно.
   if (!explicitCrew && (input.shiftType || input.operationalDate)) {
-    const crew = crewFor(
+    const crew = await resolveCrew(
+      existingShift.organizationId,
       input.operationalDate ?? existingShift.operationalDate,
       input.shiftType ?? existingShift.shiftType,
     );

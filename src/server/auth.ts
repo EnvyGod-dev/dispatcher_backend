@@ -192,8 +192,12 @@ export const auth = betterAuth({
   },
 
   session: {
+    /**
+     * Session 30 хоног хүчинтэй. Хэрэглэгч идэвхтэй байх тусам өдөрт нэг удаа сунгагдана
+     * (sliding) — вебээс 12 цаг, түүнээс ч удаан гаргахгүй.
+     */
     expiresIn: 60 * 60 * 24 * 30,
-    updateAge: 60 * 60 * 24 * 7,
+    updateAge: 60 * 60 * 24,
 
     /**
      * ⚠️ Cookie cache УНТРААЛТТАЙ.

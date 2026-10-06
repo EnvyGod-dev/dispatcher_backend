@@ -12,7 +12,8 @@ import {
   vehicles,
   workLogs,
 } from '$/libs/database/schema';
-import { CREW_LABELS, CREWS, type Crew, crewCalendar, crewFor, crewWeeks } from '$/utils/crew-rotation';
+import { getCrewCalendar, getCrewResolver } from '$/context/crew-schedule';
+import { CREW_LABELS, CREWS, type Crew } from '$/utils/crew-rotation';
 import { ClientError } from '$/utils/errors';
 import { DATE_ONLY_PATTERN } from '$/utils/operational-date';
 import { and, eq, gte, isNull, lte, ne, sql } from 'drizzle-orm';
@@ -136,7 +137,7 @@ const optional = async <T>(query: PromiseLike<T[]>, label: string, warnings: str
  * Уулын ажлын тайлан: сонгосон хугацааны бүтээлийг ээлж (А/Б/В/Г), өдөр, экскаватор,
  * автосамосвал, буулгах цэг, блокоор задалж, түлш, төлөвлөгөө, маркшейдерийн хэмжилттэй харьцуулна.
  *
- * Ээлжийг (бригад) ажлын өдөр ба ээлжийн төрлөөс автоматаар тооцно (utils/crew-rotation).
+ * Ээлжийг (бригад) хуваариас (вебээс оруулсан, эсвэл үндсэн дүрэм) ажлын өдөр, ээлжийн төрлөөр тооцно.
  */
 export const getMiningReport = async ({
   organizationId,
@@ -148,6 +149,11 @@ export const getMiningReport = async ({
   to: string;
 }) => {
   assertRange(from, to);
+
+  const [resolver, calendar] = await Promise.all([
+    getCrewResolver(organizationId, from, to),
+    getCrewCalendar(organizationId, from, to),
+  ]);
 
   const excavator = alias(vehicles, 'excavator');
   const warnings: string[] = [];
@@ -356,7 +362,7 @@ export const getMiningReport = async ({
     if (!date) continue;
 
     const shiftType: ShiftType = shift.shiftType === 'night' ? 'night' : 'day';
-    const crew = crewFor(date, shiftType) ?? (shift.storedCrew as Crew | null);
+    const crew = resolver.crewFor(date, shiftType);
     const logs = logsByShift.get(shift.id) ?? [];
     const coalTrips = logs.filter((l) => l.stockpileType === 'coal').length;
     const soilTrips = logs.filter((l) => l.stockpileType === 'soil').length;
@@ -469,7 +475,7 @@ export const getMiningReport = async ({
     fleetFuel += liters;
 
     const shiftType = refuel.shiftType === 'day' || refuel.shiftType === 'night' ? refuel.shiftType : null;
-    const crew = crewFor(refuel.operationalDate, shiftType);
+    const crew = resolver.crewFor(refuel.operationalDate, shiftType);
 
     if (crew && shiftType) {
       fuelByCrew.set(crew, (fuelByCrew.get(crew) ?? 0) + liters);
@@ -514,7 +520,7 @@ export const getMiningReport = async ({
     const shiftType: ShiftType = plan.shiftType === 'night' ? 'night' : 'day';
     dayAgg(plan.date, shiftType).planM3 += amount;
 
-    const crew = crewFor(plan.date, shiftType);
+    const crew = resolver.crewFor(plan.date, shiftType);
     if (crew) crewAgg(crew).planM3 += amount;
   }
 
@@ -642,7 +648,7 @@ export const getMiningReport = async ({
 
       return { crew, label: CREW_LABELS[crew], dayShifts: counts.day, nightShifts: counts.night, ...agg.result() };
     }),
-    days: crewCalendar(from, to).map(({ date, day, night }) => {
+    days: calendar.days.map(({ date, day, night }) => {
       const entry = dayMap.get(date);
       const dayResult = (entry?.day ?? new Agg()).result();
       const nightResult = (entry?.night ?? new Agg()).result();
@@ -690,14 +696,18 @@ export const getMiningReport = async ({
     blocks: [...blockMap.values()]
       .map((b) => ({ ...b, m3: round(b.m3) }))
       .sort((a, b) => b.m3 - a.m3 || b.trips - a.trips),
-    schedule: crewWeeks(from, 20)
-      .filter((w) => w.weekStart <= to)
-      .map((w) => ({
-        ...w,
-        dayLabel: CREW_LABELS[w.day],
-        nightLabel: CREW_LABELS[w.night],
-        restingLabels: w.resting.map((c) => CREW_LABELS[c]),
-      })),
+    // Ээлжийн хуваарь (ижил ээлжтэй үргэлжилсэн хугацаанууд).
+    schedule: calendar.segments.map((seg) => ({
+      weekStart: seg.start,
+      weekEnd: seg.end,
+      day: seg.day,
+      night: seg.night,
+      resting: seg.resting,
+      dayLabel: seg.dayLabel,
+      nightLabel: seg.nightLabel,
+      restingLabels: seg.restingLabels,
+      source: seg.source,
+    })),
   };
 };
 

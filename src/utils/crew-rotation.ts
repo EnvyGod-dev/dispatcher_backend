@@ -1,19 +1,22 @@
 /**
  * Ээлжийн (бригад) хуваарь: А, Б, В, Г гэсэн 4 ээлж.
  *
+ * Энэ файл нь ҮНДСЭН (default) дүрэм. Байгууллага вебээс өөрийн хуваарийг гараар
+ * оруулбал (crew_schedule_periods) тэр нь давуу эрхтэй (context/crew-schedule).
+ *
  * - Ээлж 7 хоног тутам Мягмар гарагт солигдоно.
  * - Ээлж бүр 1 долоо хоног өдөр, дараагийн долоо хоног шөнө ажиллаад 2 долоо хоног амарна.
  * - Тиймээс шөнийн ээлж = өмнөх долоо хоногт өдөр ажилласан ээлж.
  *
- * Жишээ (ANCHOR_DATE = 2026-10-06, Мягмар):
- *   2026-09-29 – 10-05: өдөр Г, шөнө Б
- *   2026-10-06 – 10-12: өдөр В, шөнө Г
- *   2026-10-13 – 10-19: өдөр А, шөнө В
- *   2026-10-20 – 10-26: өдөр Б, шөнө А
- *   2026-10-27 – 11-02: өдөр Г, шөнө Б  (давтагдана)
+ * Жишээ (ANCHOR_DATE = 2026-09-29, Мягмар):
+ *   2026-09-29 – 10-05: өдөр А, шөнө В
+ *   2026-10-06 – 10-12: өдөр Б, шөнө А
+ *   2026-10-13 – 10-19: өдөр Г, шөнө Б
+ *   2026-10-20 – 10-26: өдөр В, шөнө Г
+ *   2026-10-27 – 11-02: өдөр А, шөнө В  (давтагдана)
  *
  * Ээлжийг ажлын өдөр (operational date) ба ээлжийн төрлөөр тодорхойлно. Шөнийн ээлжийн ажлын
- * өдөр нь эхэлсэн өдөр тул Мягмарын шөнө шинэ шөнийн ээлж ажиллана.
+ * өдөр нь эхэлсэн өдөр (жишээ нь 10-05 18:30 → 10-06 06:30 бол 10-05-ны шөнө).
  *
  * DB-д A/B/C/D (enum_driver_shift_group) гэж хадгална: A=А, B=Б, C=В, D=Г.
  */
@@ -23,17 +26,18 @@ export type Crew = (typeof CREWS)[number];
 
 export const CREW_LABELS: Record<Crew, string> = { A: 'А', B: 'Б', C: 'В', D: 'Г' };
 
-/** Энэ өдрөөс эхлэх долоо хоногт өдөр В, шөнө Г ажиллана. Мягмар гараг байх ёстой. */
-export const CREW_ANCHOR_DATE = '2026-10-06';
+/** Энэ өдрөөс эхлэх долоо хоногт өдөр А, шөнө В ажиллана. Мягмар гараг байх ёстой. */
+export const CREW_ANCHOR_DATE = '2026-09-29';
 
-/** ANCHOR_DATE-ээс эхлэн долоо хоног бүрийн өдрийн ээлж (4 долоо хоногоор давтагдана). */
-const DAY_ORDER: readonly Crew[] = ['C', 'A', 'B', 'D'];
+/** ANCHOR_DATE-ээс эхлэн долоо хоног бүрийн өдрийн ээлж (4 долоо хоногоор давтагдана): А, Б, Г, В. */
+export const DEFAULT_DAY_ORDER: readonly Crew[] = ['A', 'B', 'D', 'C'];
+const DAY_ORDER = DEFAULT_DAY_ORDER;
 
 const DATE_ONLY = /^(\d{4})-(\d{2})-(\d{2})$/;
 const DAY_MS = 86_400_000;
 
 /** 'YYYY-MM-DD' огноог UTC өдрийн дугаар болгоно (цагийн бүсээс хамаарахгүй). */
-const toDayNumber = (date: string): number | null => {
+export const toDayNumber = (date: string): number | null => {
   const m = DATE_ONLY.exec(date.slice(0, 10));
 
   if (!m) return null;
@@ -43,7 +47,16 @@ const toDayNumber = (date: string): number | null => {
   return Number.isNaN(ms) ? null : Math.floor(ms / DAY_MS);
 };
 
-const fromDayNumber = (day: number) => new Date(day * DAY_MS).toISOString().slice(0, 10);
+export const fromDayNumber = (day: number) => new Date(day * DAY_MS).toISOString().slice(0, 10);
+
+/** 'YYYY-MM-DD' + n өдөр. Огноо буруу бол null. */
+export const addDays = (date: string, days: number) => {
+  const d = toDayNumber(date);
+  return d === null ? null : fromDayNumber(d + days);
+};
+
+export const isCrew = (value: unknown): value is Crew =>
+  typeof value === 'string' && (CREWS as readonly string[]).includes(value);
 
 const mod = (n: number, m: number) => ((n % m) + m) % m;
 

@@ -647,6 +647,34 @@ export const monthlyPlans = pgTable(
   }),
 );
 
+/**
+ * Ээлжийн (А/Б/В/Г) хуваарь: вебээс гараар оруулна. Тухайн хугацаанд өдөр/шөнө ажиллах ээлж.
+ * Хуваарь оруулаагүй өдөрт utils/crew-rotation-ийн үндсэн дүрэм хэрэглэгдэнэ.
+ */
+export const crewSchedulePeriods = pgTable(
+  "crew_schedule_periods",
+  {
+    id: uuid("id").default(sql`uuid_generate_v4()`).primaryKey().notNull(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    startDate: date("start_date", { mode: "string" }).notNull(),
+    endDate: date("end_date", { mode: "string" }).notNull(),
+    dayCrew: enumDriverShiftGroup("day_crew").notNull(),
+    nightCrew: enumDriverShiftGroup("night_crew").notNull(),
+    notes: text("notes"),
+    createdBy: uuid("created_by").references(() => users.id),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" })
+      .defaultNow()
+      .notNull()
+      .$onUpdate(() => new Date().toISOString()),
+  },
+  (table) => ({
+    orgDatesIdx: index("idx_crew_schedule_org_dates").on(table.organizationId, table.startDate, table.endDate),
+  }),
+);
+
 export const organizationSettings = pgTable(
   "organization_settings",
   {

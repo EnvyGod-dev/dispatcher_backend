@@ -50,6 +50,17 @@ export const authMiddleware: MiddlewareHandler = async (
   forwardSessionCookies();
 
   if (!session?.user) {
+    // Cookie ирсэн боловч session олдоогүй бол шалтгааныг логонд үлдээнэ (гэнэт гаргадаг асуудлыг оношлоход).
+    const cookieHeader = c.req.header('cookie') ?? '';
+
+    if (cookieHeader.includes('session_token')) {
+      console.warn('[auth] session not found for request with session cookie', {
+        path,
+        origin: c.req.header('origin') ?? null,
+        userAgent: (c.req.header('user-agent') ?? '').slice(0, 80),
+      });
+    }
+
     throw new HTTPException(401, {
       message: 'Unauthenticated',
     });
