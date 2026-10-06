@@ -175,7 +175,7 @@ shiftsReportRouter
   )
   .get(
     '/shift-details',
-    rbac({ roles: ['ita', 'admin', 'dispatcher'] }),
+    rbac({ roles: ['manager', 'ita', 'admin', 'dispatcher'] }),
     zValidator(
       'query',
       z.object({

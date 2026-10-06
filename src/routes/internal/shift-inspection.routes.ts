@@ -30,7 +30,7 @@ import { z } from 'zod';
 const inspectionRoutes = new Hono<AppEnv>()
   .get(
     'shift-inspections/summary',
-    rbac({ roles: ['markscheider', 'dispatcher', 'ita', 'mechanic', 'admin'] }),
+    rbac({ roles: ['manager', 'markscheider', 'dispatcher', 'ita', 'mechanic', 'admin'] }),
     zValidator(
       'query',
       z.object({
@@ -100,7 +100,7 @@ const inspectionRoutes = new Hono<AppEnv>()
   )
   .get(
     'shift-inspections',
-    rbac({ roles: ['markscheider', 'dispatcher', 'ita', 'mechanic', 'admin'] }),
+    rbac({ roles: ['manager', 'markscheider', 'dispatcher', 'ita', 'mechanic', 'admin'] }),
     zValidator(
       'query',
       z.object({
