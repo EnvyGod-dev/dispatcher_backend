@@ -1200,6 +1200,10 @@ export const fuelIssues = pgTable(
       .notNull()
       .references(() => vehicles.id),
     quantity: numeric("quantity", { precision: 12, scale: 2 }).notNull(),
+    meterStart: numeric("meter_start"),
+    meterEnd: numeric("meter_end"),
+    meterStartReading: text("meter_start_reading"),
+    meterEndReading: text("meter_end_reading"),
     issuedAt: timestamp("issued_at", { withTimezone: true, mode: "string" }).notNull(),
     operationalDate: date("operational_date", { mode: "string" }).notNull(),
     issuedBy: uuid("issued_by")
@@ -1240,8 +1244,11 @@ export const fuelRefuelings = pgTable(
     refueledAt: timestamp("refueled_at", { withTimezone: true, mode: "string" }).notNull(),
     operationalDate: date("operational_date", { mode: "string" }).notNull(),
     shiftType: enumShiftType("shift_type"),
-    meterStart: numeric("meter_start", { precision: 14, scale: 2 }),
-    meterEnd: numeric("meter_end", { precision: 14, scale: 2 }),
+    meterStart: numeric("meter_start"),
+    meterEnd: numeric("meter_end"),
+    // Бичсэн хэлбэрээр нь (урд талын 0-уудтай) хадгалсан заалт.
+    meterStartReading: text("meter_start_reading"),
+    meterEndReading: text("meter_end_reading"),
     operatorId: uuid("operator_id")
       .notNull()
       .references(() => users.id),
@@ -1272,6 +1279,39 @@ export const fuelRefuelings = pgTable(
     uniqOrgClient: uniqueIndex("uniq_fuel_refuelings_org_client")
       .on(table.organizationId, table.clientId)
       .where(sql`client_id IS NOT NULL`),
+  }),
+);
+
+/** Агуулах, түгээгч машины тоолуур: одоогийн заалт (0-уудтай text), оронгийн тоо. */
+export const fuelMeters = pgTable(
+  "fuel_meters",
+  {
+    id: uuid("id").default(sql`uuid_generate_v4()`).primaryKey().notNull(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    holderType: enumFuelHolderType("holder_type").notNull(),
+    tankId: uuid("tank_id").references(() => fuelTanks.id),
+    vehicleId: uuid("vehicle_id").references(() => vehicles.id),
+    digits: integer("digits").notNull(),
+    reading: text("reading").notNull(),
+    readingAt: timestamp("reading_at", { withTimezone: true, mode: "string" }).notNull(),
+    notes: text("notes"),
+    createdBy: uuid("created_by").references(() => users.id),
+    updatedBy: uuid("updated_by").references(() => users.id),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`CURRENT_TIMESTAMP`).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" })
+      .default(sql`CURRENT_TIMESTAMP`)
+      .notNull()
+      .$onUpdate(() => new Date().toISOString()),
+  },
+  (table) => ({
+    uniqTank: uniqueIndex("uniq_fuel_meter_tank")
+      .on(table.organizationId, table.tankId)
+      .where(sql`tank_id IS NOT NULL`),
+    uniqVehicle: uniqueIndex("uniq_fuel_meter_vehicle")
+      .on(table.organizationId, table.vehicleId)
+      .where(sql`vehicle_id IS NOT NULL`),
   }),
 );
 

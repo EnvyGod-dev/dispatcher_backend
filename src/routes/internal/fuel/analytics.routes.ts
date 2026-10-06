@@ -6,6 +6,7 @@ import {
   getFuelConsumptionReport,
   getFuelConsumptionTimeseries,
   getFuelDashboardSummary,
+  getFuelFlows,
   getFuelPeriodSummary,
   getFuelProductionStats,
   getFuelReceiptsBySupplier,
@@ -116,6 +117,12 @@ export const fuelAnalyticsRoutes = new Hono<AppEnv>()
     const { from, to } = c.req.valid('query');
 
     return run(async () => c.json(await getFuelReceiptsBySupplier(orgOf(c), from, to)));
+  })
+  // Агуулах/түгээгч бүр хэнээс хэдийг авч, хэнд хэдийг өгсөн; нийлүүлэгч бүрийн нийлүүлэлт.
+  .get('/reports/flows', rbac({ roles: FUEL_ROLES.view }), zValidator('query', rangeQuery), async (c) => {
+    const { from, to } = c.req.valid('query');
+
+    return run(async () => c.json(await getFuelFlows(orgOf(c), from, to)));
   })
   .get('/reports/refuel-breakdown', rbac({ roles: FUEL_ROLES.view }), zValidator('query', rangeQuery), async (c) => {
     const { from, to } = c.req.valid('query');

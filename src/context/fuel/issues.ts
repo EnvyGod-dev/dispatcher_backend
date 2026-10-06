@@ -17,7 +17,6 @@ import {
 
 import {
   type Holder,
-  toNumber,
   toNumberOrNull,
   round,
   toNumeric,
@@ -34,6 +33,13 @@ import {
 } from './lookups';
 
 import {
+  advanceMeter,
+  getMeterFor,
+} from './meters';
+
+import { resolveRefuelQuantity } from './refuelings';
+
+import {
   lockHolders,
   assertWithdrawable,
   assertCapacity,
@@ -45,7 +51,10 @@ type CreateIssueInput = {
   organizationId: string;
   tankId: string;
   dispenserVehicleId: string;
-  quantity: string | number;
+  quantity?: string | number | null;
+  /** Агуулахын тоолуурын заалт (урд талын 0-уудтай string эсвэл тоо). */
+  meterStart?: string | number | null;
+  meterEnd?: string | number | null;
   issuedAt: string;
   operationalDate?: string;
   issuedBy: string;
@@ -54,9 +63,9 @@ type CreateIssueInput = {
 };
 
 export const createFuelIssue = async (input: CreateIssueInput) => {
-  assertPositive(input.quantity);
-
-  const quantity = round(toNumber(input.quantity));
+  if (input.quantity !== null && input.quantity !== undefined) {
+    assertPositive(input.quantity);
+  }
 
   return drizzleDb.transaction(async (tx) => {
     const tank = await getOrgTank(tx, input.organizationId, input.tankId);
@@ -65,6 +74,10 @@ export const createFuelIssue = async (input: CreateIssueInput) => {
     await assertOrgUser(tx, input.organizationId, input.issuedBy, 'Олгосон ажилтан');
 
     const tankHolder: Holder = { holderType: 'tank', tankId: tank.id };
+    // Агуулахын тоолуур бүртгэгдсэн бол заалтаар тооцож, одоогийн заалтыг шинэчилнэ.
+    const meter = await getMeterFor(tx, input.organizationId, tankHolder);
+    const { quantity: resolved, start, end } = resolveRefuelQuantity(input, meter?.digits);
+    const quantity = round(resolved);
     const dispenserHolder: Holder = { holderType: 'dispenser', vehicleId: dispenser.id };
     const dispenserLabel = `Түгээх машин ${dispenser.mineNumber ?? dispenser.name}`;
 
@@ -91,6 +104,10 @@ export const createFuelIssue = async (input: CreateIssueInput) => {
         tankId: tank.id,
         dispenserVehicleId: dispenser.id,
         quantity: toNumeric(quantity),
+        meterStart: start ? start.value.toString() : null,
+        meterEnd: end ? end.value.toString() : null,
+        meterStartReading: start?.text ?? null,
+        meterEndReading: end?.text ?? null,
         issuedAt: input.issuedAt,
         operationalDate,
         issuedBy: input.issuedBy,
@@ -117,6 +134,8 @@ export const createFuelIssue = async (input: CreateIssueInput) => {
         issueId: issue.id,
       },
     ]);
+
+    await advanceMeter(tx, meter, end, input.issuedAt, input.createdBy);
 
     await insertAudit(tx, {
       organizationId: input.organizationId,

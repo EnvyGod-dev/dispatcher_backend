@@ -6,6 +6,7 @@ export * from './act-email';
 export * from './receipts';
 export * from './issues';
 export * from './refuelings';
+export * from './meters';
 export * from './measurements';
 export * from './production';
 export * from './consumption';
