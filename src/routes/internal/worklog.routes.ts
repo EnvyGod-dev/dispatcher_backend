@@ -102,6 +102,8 @@ const worklogRoutes = new Hono<AppEnv>()
       z.object({
         status: z.enum(enumWorkLogStatus.enumValues).default('completed'),
         notes: z.string().optional(),
+        // Сүлжээгүй үед дуусгасан рейсийн бодит дууссан цаг (сүлжээ сэргэхэд илгээнэ).
+        endTime: z.string().datetime({ offset: true }).optional(),
       }),
     ),
     async (c) => {

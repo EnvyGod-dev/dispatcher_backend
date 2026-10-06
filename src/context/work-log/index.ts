@@ -150,6 +150,8 @@ export type EndWorkLogInput = {
   userId: string;
   status: 'in_progress' | 'completed' | 'cancelled';
   notes?: string;
+  /** Сүлжээгүй үед дуусгасан бол тэр үеийн цаг. Ирээгүй бол одоогийн цаг. */
+  endTime?: string;
 };
 
 export const endWorkLog = async (input: EndWorkLogInput) => {
@@ -165,13 +167,24 @@ export const endWorkLog = async (input: EndWorkLogInput) => {
     throw new ClientError('Ээлжийн мэдээлэл олдсонгүй.');
   }
 
+  // Офлайн дуусгасан цагийг зөвшөөрнө: рейс эхэлснээс өмнө эсвэл ирээдүйд байж болохгүй.
+  const now = Date.now();
+  const requested = input.endTime ? Date.parse(input.endTime) : NaN;
+  const startedAt = started.startTime ? Date.parse(started.startTime) : NaN;
+  const endTime =
+    Number.isFinite(requested) && requested <= now + 60_000 && (!Number.isFinite(startedAt) || requested >= startedAt)
+      ? new Date(requested).toISOString()
+      : new Date(now).toISOString();
+
+  const { userId: _userId, endTime: _endTime, ...changes } = input;
+
   const updated = await drizzleDb.transaction(async (tx) => {
     const workLog = first(
       await tx
         .update(workLogs)
         .set({
-          ...input,
-          endTime: new Date().toISOString(),
+          ...changes,
+          endTime,
         })
         .where(eq(workLogs.id, started.id))
         .returning()
