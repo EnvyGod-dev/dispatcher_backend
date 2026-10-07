@@ -402,7 +402,8 @@ const lockRefueling = async (tx: Tx, organizationId: string, id: string) => {
 
 const sourceHolderOf = async (tx: Tx, refueling: typeof fuelRefuelings.$inferSelect) => {
   if (refueling.sourceType === 'dispenser') {
-    const dispenser = await getDispenserVehicle(tx, refueling.organizationId, refueling.dispenserVehicleId!);
+    // Өмнө бүртгэгдсэн цэнэглэлтийг засах/цуцлахад түгээгчийн шүүлтүүр шаардахгүй.
+    const dispenser = await getOrgVehicle(tx, refueling.organizationId, refueling.dispenserVehicleId!, 'Түгээх машин');
 
     return {
       holder: { holderType: 'dispenser', vehicleId: dispenser.id } as Holder,

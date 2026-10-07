@@ -14,6 +14,7 @@ import {
 } from "$/libs/database/schema";
 import { firstOrNull } from "$/libs/database/utils";
 import dayjs from "dayjs";
+import { alias } from "drizzle-orm/pg-core";
 import { buildDriverNameFilter } from "$/utils/driver-name-filter";
 
 import {
@@ -814,6 +815,66 @@ export const getShiftKpi = async ({
       .limit(1),
   );
 
+  // Шилдэг ээлжийн (А/Б/В/Г) хамгийн өндөр бүтээлтэй самосвал, экскаватор.
+  const topCrew = topDriverShiftGroup?.driverShiftGroup ?? null;
+  const topCrewConditions = topCrew
+    ? and(
+        or(eq(shifts.status, 'completed'), eq(shifts.status, 'started')),
+        finalConditions,
+        isNull(vehicles.deletedAt),
+        eq(shifts.driverShiftGroup, topCrew),
+        buildDriverNameFilter(driverName),
+        vehicleCode ? ilike(vehicles.code, `%${vehicleCode}%`) : undefined,
+      )
+    : undefined;
+  const shiftProduction = sql`(COALESCE(${shifts.coalProduct}, 0) + COALESCE(${shifts.soilProduct}, 0))`;
+  const shiftTrips = sql`(SELECT COUNT(*) FROM work_logs w2 WHERE w2.shift_id = ${shifts.id} AND w2.status <> 'cancelled')`;
+  const excavatorVehicle = alias(vehicles, 'top_crew_excavator');
+
+  const [topCrewDump, topCrewExcavator] = topCrew
+    ? await Promise.all([
+        drizzleDb
+          .select({
+            vehicleId: shifts.vehicleId,
+            vehicleCode: vehicles.code,
+            vehicleName: vehicles.name,
+            production: sql<string>`COALESCE(SUM(${shiftProduction}), 0)::text`.as('production'),
+            trips: sql<number>`COALESCE(SUM(${shiftTrips}), 0)::int`.as('trips'),
+          })
+          .from(shifts)
+          .leftJoin(users, eq(users.id, shifts.driverId))
+          .innerJoin(vehicles, and(eq(vehicles.id, shifts.vehicleId), isNull(vehicles.deletedAt)))
+          .where(topCrewConditions)
+          .groupBy(shifts.vehicleId, vehicles.code, vehicles.name)
+          .orderBy(desc(sql`COALESCE(SUM(${shiftProduction}), 0)`), desc(sql`COALESCE(SUM(${shiftTrips}), 0)`))
+          .limit(1)
+          .then(firstOrNull),
+        drizzleDb
+          .select({
+            vehicleId: dailyPlans.vehicleId,
+            vehicleCode: excavatorVehicle.code,
+            vehicleName: excavatorVehicle.name,
+            // Рейс бүрт тухайн ээлжийн бүтээлийг рейсийн тоонд хуваан хамааруулна.
+            production: sql<string>`COALESCE(SUM(${shiftProduction}::numeric / NULLIF(${shiftTrips}, 0)), 0)::numeric(14,1)::text`.as('production'),
+            trips: sql<number>`COUNT(${workLogs.id})::int`.as('trips'),
+          })
+          .from(workLogs)
+          .innerJoin(shifts, eq(shifts.id, workLogs.shiftId))
+          .innerJoin(dailyPlans, eq(dailyPlans.id, workLogs.planId))
+          .leftJoin(excavatorVehicle, eq(excavatorVehicle.id, dailyPlans.vehicleId))
+          .leftJoin(users, eq(users.id, shifts.driverId))
+          .leftJoin(vehicles, and(eq(vehicles.id, shifts.vehicleId), isNull(vehicles.deletedAt)))
+          .where(and(topCrewConditions, sql`${workLogs.status} <> 'cancelled'`, sql`${dailyPlans.vehicleId} IS NOT NULL`))
+          .groupBy(dailyPlans.vehicleId, excavatorVehicle.code, excavatorVehicle.name)
+          .orderBy(
+            desc(sql`COALESCE(SUM(${shiftProduction}::numeric / NULLIF(${shiftTrips}, 0)), 0)`),
+            desc(sql`COUNT(${workLogs.id})`),
+          )
+          .limit(1)
+          .then(firstOrNull),
+      ])
+    : [null, null];
+
   const result = await drizzleDb
     .select({
       // shift related
@@ -908,6 +969,8 @@ export const getShiftKpi = async ({
     ...productQuery[0],
     topDriverShiftGroup: topDriverShiftGroup?.driverShiftGroup ?? null,
     topDriverShiftGroupProduction: topDriverShiftGroup?.production ?? '0',
+    topShiftDump: topCrewDump,
+    topShiftExcavator: topCrewExcavator,
   };
 
   return (
