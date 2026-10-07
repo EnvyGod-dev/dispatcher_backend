@@ -35,6 +35,34 @@ import {
 import type { DriverShiftGroup, ShiftStatus, ShiftType } from "./types";
 import type { VehicleType } from "../vehicle/types";
 
+
+/**
+ * Аюултай / анхаарах үзлэгүүд: бүлэг, үзүүлэлт, төлөв, тэмдэглэл, зураг (Excel-д "яагаад" гэдгийг харуулахад).
+ */
+const issueInspectionsJson = (shiftId: typeof shifts.id) => sql<
+  { group: string | null; name: string | null; status: 'issue' | 'needs_inspection'; notes: string | null; photoUrl: string | null }[]
+>`
+  COALESCE(
+    (
+      SELECT json_agg(
+        json_build_object(
+          'group', i.inspection_type,
+          'name', i.name,
+          'status', si.status,
+          'notes', NULLIF(TRIM(si.notes), ''),
+          'photoUrl', si.photo_url
+        )
+        ORDER BY CASE si.status WHEN 'issue' THEN 0 ELSE 1 END, i.inspection_type, i.name
+      )
+      FROM shift_inspections si
+      INNER JOIN inspections i ON i.id = si.inspection_id
+      WHERE si.shift_id = ${shiftId}
+        AND si.status IN ('issue', 'needs_inspection')
+    ),
+    '[]'::json
+  )
+`;
+
 export type ShiftInspectionReportFilter = {
   organizationId: string;
   operationalDate?: string;
@@ -284,6 +312,7 @@ export const getShiftReports = async (
           ''
         )
       `.as("issue_inspection_names"),
+      issueInspections: issueInspectionsJson(shifts.id).as("issue_inspections"),
     })
     .from(shifts)
     .leftJoin(users, eq(users.id, shifts.driverId))
@@ -409,6 +438,7 @@ export const getShiftInspectionReports = async (
         sql<string>`COALESCE(string_agg(DISTINCT CASE WHEN ${shiftInspections.status} IN ('issue', 'needs_inspection') THEN ${inspections.name} END, ', '), '')`.as(
           "issueInspectionNames",
         ),
+      issueInspections: issueInspectionsJson(shifts.id).as("issueInspections"),
       issueInspectionTypes:
         sql<string>`COALESCE(string_agg(DISTINCT CASE WHEN ${shiftInspections.status} = 'issue' THEN 'issue' WHEN ${shiftInspections.status} = 'needs_inspection' THEN 'needs_inspection' END, ', '), '')`.as(
           "issueInspectionTypes",
