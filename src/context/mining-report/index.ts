@@ -360,7 +360,7 @@ export const getMiningReport = async ({
   const nightTrucks = new Map<string, Best>();
   const nightExcavators = new Map<string, Best>();
   /** Ээлж (А/Б/В/Г) бүрийн оператор: `${crew}|${driverId}` → бүтээл, рейс. */
-  const crewOperators = new Map<string, Best & { crew: Crew; driverId: string }>();
+  const crewOperators = new Map<string, Best & { crew: Crew; driverId: string; shifts: number }>();
   const addBest = (map: Map<string, Best>, id: string, name: string, code: string | null, m3: number, trips: number) => {
     const entry = map.get(id) ?? { name, code, m3: 0, trips: 0 };
     entry.m3 += m3;
@@ -442,9 +442,18 @@ export const getMiningReport = async ({
 
     if (crew) {
       const key = `${crew}|${shift.driverId}`;
-      const entry = crewOperators.get(key) ?? { crew, driverId: shift.driverId, name: operator.name, code: null, m3: 0, trips: 0 };
+      const entry = crewOperators.get(key) ?? {
+        crew,
+        driverId: shift.driverId,
+        name: operator.name,
+        code: null,
+        m3: 0,
+        trips: 0,
+        shifts: 0,
+      };
       entry.m3 += coalM3 + soilM3;
       entry.trips += logs.length;
+      entry.shifts += 1;
       crewOperators.set(key, entry);
     }
 
@@ -715,10 +724,23 @@ export const getMiningReport = async ({
     crews: CREWS.map((crew) => {
       const agg = crews.get(crew) ?? new Agg();
       const counts = crewShiftTypes.get(crew) ?? { day: 0, night: 0 };
-      // Тухайн ээлжийн шилдэг оператор (м³, тэнцвэл рейсээр).
-      const top = [...crewOperators.values()]
-        .filter((o) => o.crew === crew && (o.m3 > 0 || o.trips > 0))
-        .sort((a, b) => b.m3 - a.m3 || b.trips - a.trips)[0];
+      // Урамшуулал: тухайн ээлжийн хамгийн олон рейс хийсэн операторууд (тэнцвэл м³-ээр), эхний 3.
+      const leaders = [...crewOperators.values()]
+        .filter((o) => o.crew === crew && o.trips > 0)
+        .sort((a, b) => b.trips - a.trips || b.m3 - a.m3)
+        .slice(0, 3)
+        .map((o, index) => ({
+          rank: index + 1,
+          driverId: o.driverId,
+          name: o.name,
+          trips: o.trips,
+          m3: round(o.m3),
+          shifts: o.shifts,
+          tripsPerShift: ratio(o.trips, o.shifts, 1),
+          /** Ээлжийн нийт рейсийн хэдэн хувийг хийсэн. */
+          sharePercent: percent(o.trips, agg.trips),
+        }));
+      const top = leaders[0];
 
       return {
         crew,
@@ -726,7 +748,8 @@ export const getMiningReport = async ({
         dayShifts: counts.day,
         nightShifts: counts.night,
         ...agg.result(),
-        topOperator: top ? { driverId: top.driverId, name: top.name, m3: round(top.m3), trips: top.trips } : null,
+        topOperator: top ? { driverId: top.driverId, name: top.name, m3: top.m3, trips: top.trips } : null,
+        topOperators: leaders,
       };
     }),
     days: calendar.days.map(({ date, day, night }) => {
