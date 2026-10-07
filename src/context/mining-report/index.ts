@@ -175,6 +175,7 @@ export const getMiningReport = async ({
         soilProduct: shifts.soilProduct,
         storedCrew: shifts.driverShiftGroup,
         vehicleCode: vehicles.code,
+        vehicleMineNumber: vehicles.mineNumber,
         vehicleName: vehicles.name,
         vehicleModel: vehicles.model,
         vehicleType: vehicles.type,
@@ -353,6 +354,18 @@ export const getMiningReport = async ({
     return entry[shiftType];
   };
 
+  /** Шөнийн ээлжийн шилдэг оператор, машин, экскаватор (м³, рейс). */
+  type Best = { name: string; code: string | null; m3: number; trips: number };
+  const nightOperators = new Map<string, Best>();
+  const nightTrucks = new Map<string, Best>();
+  const nightExcavators = new Map<string, Best>();
+  const addBest = (map: Map<string, Best>, id: string, name: string, code: string | null, m3: number, trips: number) => {
+    const entry = map.get(id) ?? { name, code, m3: 0, trips: 0 };
+    entry.m3 += m3;
+    entry.trips += trips;
+    map.set(id, entry);
+  };
+
   /** Тухайн ажлын өдөр/ээлж дээрх техник → оператор (түлшийг хамааруулахад). */
   const driverByVehicleSlot = new Map<string, string>();
 
@@ -425,8 +438,17 @@ export const getMiningReport = async ({
 
     driverByVehicleSlot.set(`${shift.vehicleId}|${date}|${shiftType}`, shift.driverId);
 
+    if (shiftType === 'night') {
+      addBest(nightOperators, shift.driverId, operator.name, null, coalM3 + soilM3, logs.length);
+      addBest(nightTrucks, shift.vehicleId, shift.vehicleName, shift.vehicleMineNumber ?? shift.vehicleCode, coalM3 + soilM3, logs.length);
+    }
+
     for (const log of logs) {
       const m3 = log.stockpileType === 'coal' ? coalPerTrip : log.stockpileType === 'soil' ? soilPerTrip : 0;
+
+      if (log.excavatorId && shiftType === 'night') {
+        addBest(nightExcavators, log.excavatorId, log.excavatorName ?? '—', log.excavatorCode, m3, 1);
+      }
 
       if (log.excavatorId) {
         const exca = excavatorMap.get(log.excavatorId) ?? {
@@ -469,10 +491,15 @@ export const getMiningReport = async ({
   let fleetFuel = 0;
   let unassignedFuel = 0;
   const fuelByCrew = new Map<Crew, number>();
+  const fuelByVehicle = new Map<string, { liters: number; count: number }>();
 
   for (const refuel of refuelRows) {
     const liters = num(refuel.quantity);
     fleetFuel += liters;
+    const byVehicle = fuelByVehicle.get(refuel.receiverVehicleId) ?? { liters: 0, count: 0 };
+    byVehicle.liters += liters;
+    byVehicle.count += 1;
+    fuelByVehicle.set(refuel.receiverVehicleId, byVehicle);
 
     const shiftType = refuel.shiftType === 'day' || refuel.shiftType === 'night' ? refuel.shiftType : null;
     const crew = resolver.crewFor(refuel.operationalDate, shiftType);
@@ -622,11 +649,44 @@ export const getMiningReport = async ({
 
   const totalResult = totals.result();
 
+  // ── Онцлох: шөнийн ээлжийн шилдэг оператор, машин, экскаватор; хамгийн их түлш авсан техник ─
+  const best = (map: Map<string, Best>) => {
+    const top = [...map.entries()].sort((a, b) => b[1].m3 - a[1].m3 || b[1].trips - a[1].trips)[0];
+    return top && (top[1].m3 > 0 || top[1].trips > 0)
+      ? { id: top[0], name: top[1].name, code: top[1].code, m3: round(top[1].m3), trips: top[1].trips }
+      : null;
+  };
+  const topFuelEntry = [...fuelByVehicle.entries()].sort((a, b) => b[1].liters - a[1].liters)[0];
+  let topFuelVehicle: { id: string; name: string; code: string | null; liters: number; count: number } | null = null;
+
+  if (topFuelEntry) {
+    const [vehicle] = await drizzleDb
+      .select({ name: vehicles.name, code: vehicles.code, mineNumber: vehicles.mineNumber })
+      .from(vehicles)
+      .where(eq(vehicles.id, topFuelEntry[0]))
+      .limit(1);
+    topFuelVehicle = {
+      id: topFuelEntry[0],
+      name: vehicle?.name ?? '—',
+      code: vehicle?.mineNumber ?? vehicle?.code ?? null,
+      liters: round(topFuelEntry[1].liters),
+      count: topFuelEntry[1].count,
+    };
+  }
+
+  const highlights = {
+    nightOperator: best(nightOperators),
+    nightTruck: best(nightTrucks),
+    nightExcavator: best(nightExcavators),
+    topFuelVehicle,
+  };
+
   return {
     from,
     to,
     generatedAt: new Date().toISOString(),
     warnings,
+    highlights,
     totals: {
       ...totalResult,
       excavators: excavatorMap.size,

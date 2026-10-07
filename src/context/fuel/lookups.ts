@@ -71,18 +71,30 @@ export const getOrgVehicle = async (db: DbOrTx, organizationId: string, vehicleI
 };
 
 /**
- * Түгээгч (түлшний) машин: тохиргоонд isFuelDispenser гэж тэмдэглэсэн, эсвэл парк дугаар нь
- * "ST"-ээр эхэлсэн техник (уурхайн түлшний машинууд ST860, ST861 гэх мэт).
+ * Түгээгч (түлшний) машин: одоогийн уурхайд ST860, ST861 хоёр л түлш түгээнэ.
+ * Өөр машин нэмэгдвэл вебээс техникийн түлшний тохиргоонд "түгээгч" (isFuelDispenser) гэж тэмдэглэнэ.
+ * Парк дугаарыг том үсэг болгож, зай/зураасыг хасаж тулгана ("st 860", "ST-860" → "ST860").
  */
-export const DISPENSER_PREFIX = 'ST';
+export const DISPENSER_MINE_NUMBERS = ['ST860', 'ST861'] as const;
+
+const normalizeMineNumber = (value: string | null | undefined) => (value ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '');
 
 export const isDispenserVehicle = (vehicle: { isFuelDispenser: boolean | null; mineNumber: string | null; code: string | null }) =>
   !!vehicle.isFuelDispenser ||
-  (vehicle.mineNumber ?? '').trim().toUpperCase().startsWith(DISPENSER_PREFIX) ||
-  (vehicle.code ?? '').trim().toUpperCase().startsWith(DISPENSER_PREFIX);
+  (DISPENSER_MINE_NUMBERS as readonly string[]).includes(normalizeMineNumber(vehicle.mineNumber)) ||
+  (DISPENSER_MINE_NUMBERS as readonly string[]).includes(normalizeMineNumber(vehicle.code));
+
+const normalizedSql = (column: typeof vehicles.mineNumber | typeof vehicles.code) =>
+  sql`regexp_replace(upper(coalesce(${column}, '')), '[^A-Z0-9]', '', 'g')`;
 
 export const dispenserVehicleCondition = () =>
-  sql`(${vehicles.isFuelDispenser} = true OR upper(trim(${vehicles.mineNumber})) LIKE ${`${DISPENSER_PREFIX}%`} OR upper(trim(${vehicles.code})) LIKE ${`${DISPENSER_PREFIX}%`})`;
+  sql`(${vehicles.isFuelDispenser} = true OR ${normalizedSql(vehicles.mineNumber)} IN (${sql.join(
+    DISPENSER_MINE_NUMBERS.map((n) => sql`${n}`),
+    sql`, `,
+  )}) OR ${normalizedSql(vehicles.code)} IN (${sql.join(
+    DISPENSER_MINE_NUMBERS.map((n) => sql`${n}`),
+    sql`, `,
+  )}))`;
 
 export const getDispenserVehicle = async (db: DbOrTx, organizationId: string, vehicleId: string) => {
   const vehicle = await getOrgVehicle(db, organizationId, vehicleId, 'Түгээх машин');
@@ -116,7 +128,8 @@ export const holderLabel = async (db: DbOrTx, organizationId: string, holder: Ho
   }
 
   if (holder.holderType === 'dispenser') {
-    const vehicle = await getDispenserVehicle(db, organizationId, holder.vehicleId!);
+    // Өмнө бүртгэгдсэн хөдөлгөөний нэрийг харуулахад шүүлтүүр шаардахгүй.
+    const vehicle = await getOrgVehicle(db, organizationId, holder.vehicleId!, 'Түгээх машин');
 
     return `Түгээх машин ${vehicle.mineNumber ?? vehicle.name}`;
   }
