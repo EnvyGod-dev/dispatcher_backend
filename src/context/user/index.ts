@@ -474,6 +474,8 @@ export const createBulkUsers = async ({
     driverShiftGroup?: (
       typeof enumDriverShiftGroup.enumValues
     )[number];
+    /** Excel дахь мөрийн дугаар (алдааг зөв мөрөөр заахад). */
+    rowNumber: number;
   }> = [];
 
   for (
@@ -581,7 +583,7 @@ export const createBulkUsers = async ({
         );
       }
 
-      validUsers.push(validated);
+      validUsers.push({ ...validated, rowNumber });
     } catch (error) {
       results.failed++;
 
@@ -605,14 +607,8 @@ export const createBulkUsers = async ({
 
   if (validUsers.length > 0) {
     try {
-      for (
-        const [
-          idx,
-          userData,
-        ] of validUsers.entries()
-      ) {
-        const rowNumber =
-          idx + 2;
+      for (const userData of validUsers) {
+        const { rowNumber } = userData;
 
         try {
           const existing =
