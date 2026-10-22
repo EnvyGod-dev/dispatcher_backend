@@ -171,17 +171,18 @@ const miningReportRoutes = new Hono<AppEnv>()
       z.object({
         from: z.string().regex(DATE_ONLY_PATTERN),
         to: z.string().regex(DATE_ONLY_PATTERN),
+        shiftType: z.enum(['day', 'night']).optional(),
       }),
     ),
     async (c) => {
-      const { from, to } = c.req.valid('query');
+      const { from, to, shiftType } = c.req.valid('query');
       const currentUser = c.get('currentUser');
 
       if (!currentUser.organizationId) {
         throw new Forbidden();
       }
 
-      return c.json(await getMiningReport({ organizationId: currentUser.organizationId, from, to }));
+      return c.json(await getMiningReport({ organizationId: currentUser.organizationId, from, to, shiftType }));
     },
   );
 

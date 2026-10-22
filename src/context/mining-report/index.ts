@@ -143,10 +143,13 @@ export const getMiningReport = async ({
   organizationId,
   from,
   to,
+  shiftType: shiftFilter,
 }: {
   organizationId: string;
   from: string;
   to: string;
+  /** Зөвхөн өдрийн эсвэл шөнийн ээлжээр шүүх (хоосон бол хоёулаа). */
+  shiftType?: ShiftType;
 }) => {
   assertRange(from, to);
 
@@ -196,6 +199,7 @@ export const getMiningReport = async ({
           ne(shifts.status, 'cancelled'),
           gte(shifts.operationalDate, from),
           lte(shifts.operationalDate, to),
+          shiftFilter ? eq(shifts.shiftType, shiftFilter) : undefined,
         ),
       ),
 
@@ -223,6 +227,7 @@ export const getMiningReport = async ({
           ne(workLogs.status, 'cancelled'),
           gte(shifts.operationalDate, from),
           lte(shifts.operationalDate, to),
+          shiftFilter ? eq(shifts.shiftType, shiftFilter) : undefined,
         ),
       ),
 
@@ -240,6 +245,7 @@ export const getMiningReport = async ({
           isNull(fuelRefuelings.cancelledAt),
           gte(fuelRefuelings.operationalDate, from),
           lte(fuelRefuelings.operationalDate, to),
+          shiftFilter ? eq(fuelRefuelings.shiftType, shiftFilter) : undefined,
         ),
       ),
 
@@ -261,6 +267,7 @@ export const getMiningReport = async ({
           eq(equipmentShiftLogs.organizationId, organizationId),
           gte(equipmentShiftLogs.operationalDate, from),
           lte(equipmentShiftLogs.operationalDate, to),
+          shiftFilter ? eq(equipmentShiftLogs.shiftType, shiftFilter) : undefined,
         ),
       ),
       'Экскаваторын цагийн бүртгэл',
@@ -279,6 +286,8 @@ export const getMiningReport = async ({
           eq(markshaderDailyReports.organizationId, organizationId),
           gte(markshaderDailyReports.reportDate, from),
           lte(markshaderDailyReports.reportDate, to),
+          // Маркшейдерийн хэмжилт өдрөөр хийгддэг тул ээлжээр шүүхэд харьцуулахгүй.
+          shiftFilter ? sql`false` : undefined,
         ),
       ),
       'Маркшейдерийн хэмжилт',
@@ -299,6 +308,7 @@ export const getMiningReport = async ({
           eq(dailyPlans.organizationId, organizationId),
           gte(dailyPlans.date, from),
           lte(dailyPlans.date, to),
+          shiftFilter ? eq(dailyPlans.shiftType, shiftFilter) : undefined,
         ),
       ),
       'Төлөвлөгөө',
