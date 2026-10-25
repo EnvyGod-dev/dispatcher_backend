@@ -1,4 +1,5 @@
 import {
+  assertRouteInOrganization,
   createStockpile,
   deleteStockpile,
   getStockpileByPk,
@@ -60,6 +61,8 @@ export default new Hono<AppEnv>()
         id: z.string(),
         layerNumber: z.string().optional(),
         type: z.enum(enumStockPileType.enumValues).optional(),
+        /** null бол маршрутын холбоосыг арилгана. */
+        routeId: z.string().uuid().nullable().optional(),
       })
     ),
     async (c) => {
@@ -69,6 +72,10 @@ export default new Hono<AppEnv>()
 
       if (!currentUser?.organizationId) {
         throw new Unauthorized('Missing organization ID');
+      }
+
+      if (params.routeId) {
+        await assertRouteInOrganization(params.routeId, currentUser.organizationId);
       }
 
       const updated = await updateStockpile({
@@ -90,6 +97,7 @@ export default new Hono<AppEnv>()
       z.object({
         type: z.enum(enumStockPileType.enumValues),
         layerNumber: z.string(),
+        routeId: z.string().uuid().nullable().optional(),
       })
     ),
     async (c) => {
@@ -99,6 +107,10 @@ export default new Hono<AppEnv>()
 
       if (!currentUser?.organizationId) {
         throw new Unauthorized('Missing organization ID');
+      }
+
+      if (params.routeId) {
+        await assertRouteInOrganization(params.routeId, currentUser.organizationId);
       }
 
       const created = await createStockpile({

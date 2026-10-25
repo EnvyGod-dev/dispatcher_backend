@@ -1,5 +1,5 @@
 import { drizzleDb } from '$/libs/database/db';
-import { stockpiles } from '$/libs/database/schema';
+import { routes, stockpiles } from '$/libs/database/schema';
 import { first, firstOrNull, type PaginationType } from '$/libs/database/utils';
 import { and, desc, eq, getTableColumns, ilike } from 'drizzle-orm';
 import { getTotalCountSql } from '../helpers';
@@ -28,9 +28,12 @@ export const getStockpiles = async (
   return drizzleDb
     .select({
       ...getTableColumns(stockpiles),
+      /** Холбосон маршрутын код (вебэд харуулна). */
+      routeCode: routes.routeCode,
       totalCount: getTotalCountSql,
     })
     .from(stockpiles)
+    .leftJoin(routes, eq(routes.id, stockpiles.routeId))
     .where(
       and(
         eq(stockpiles.organizationId, organizationId),
@@ -41,6 +44,20 @@ export const getStockpiles = async (
     .orderBy(desc(stockpiles.createdAt))
     .limit(limit)
     .offset(offset);
+};
+
+/** Маршрут тухайн байгууллагынх эсэхийг шалгана. */
+export const assertRouteInOrganization = async (routeId: string, organizationId: string) => {
+  const route = firstOrNull(
+    await drizzleDb
+      .select({ id: routes.id })
+      .from(routes)
+      .where(and(eq(routes.id, routeId), eq(routes.organizationId, organizationId)))
+  );
+
+  if (!route) {
+    throw new NotFound('Маршрут олдсонгүй');
+  }
 };
 
 export const createStockpile = async (input: StockpileInput) => {
