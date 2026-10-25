@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import {
+  type AnyPgColumn,
   bigint,
   boolean,
   date,
@@ -353,6 +354,9 @@ export const stockpiles = pgTable("stockpiles", {
   type: enumStockPileType("type").notNull(),
 
   layerNumber: varchar("layer_number", { length: 255 }),
+
+  /** Овоолго руу тээвэрлэх маршрут (вебээс холбоно). */
+  routeId: uuid("route_id").references((): AnyPgColumn => routes.id, { onDelete: "set null" }),
 
   createdBy: uuid("created_by").references(() => users.id),
 
