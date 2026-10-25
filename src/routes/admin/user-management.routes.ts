@@ -328,7 +328,8 @@ const userManagementRoute = new Hono<AppEnv>()
   )
   .delete(
     '/employee',
-    rbac({ roles: ['hr', 'admin', 'superadmin'] }),
+    // Ажилтан устгах эрх зөвхөн админд.
+    rbac({ roles: ['admin', 'superadmin'] }),
     zValidator(
       'json',
       z.object({

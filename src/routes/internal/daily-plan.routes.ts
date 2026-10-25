@@ -140,6 +140,58 @@ const dailyPlanRoutes = new Hono<AppEnv>()
       return c.json(plan);
     }
   )
+  /**
+   * Вебийн өдрийн төлөвлөлтийн жагсаалт: эхлэх–дуусах огноогоор.
+   * Mobile-ийн `/daily-plans`, `/v2/daily-plans`-д нөлөөлөхгүйн тулд тусдаа.
+   */
+  .get(
+    '/daily-plans/range',
+    rbac({ roles: ['dispatcher', 'admin', 'markscheider', 'ita'] }),
+    zValidator(
+      'query',
+      z
+        .object({
+          limit: z.coerce.number().min(1).max(500).default(25),
+          offset: z.coerce.number().min(0).default(0),
+          shiftType: z.enum(enumShiftType.enumValues).optional(),
+          status: z.enum(enumDailyPlanStatus.enumValues).optional(),
+          startDate: z.string().regex(DATE_ONLY_PATTERN),
+          endDate: z.string().regex(DATE_ONLY_PATTERN),
+        })
+        .refine((v) => v.startDate <= v.endDate, {
+          message: 'Эхлэх огноо дуусах огнооноос хойш байна.',
+          path: ['endDate'],
+        })
+    ),
+    async (c) => {
+      const { limit, offset, startDate, endDate, shiftType, status } =
+        c.req.valid('query');
+      const user = c.get('currentUser');
+
+      if (!user.organizationId) {
+        throw new HTTPException(403, {
+          message: 'Unauthorized',
+        });
+      }
+
+      const data = await getDailyPlans(
+        { limit, offset },
+        {
+          organizationId: user.organizationId,
+          startDate,
+          endDate,
+          shiftType,
+          status,
+        }
+      );
+
+      return c.json(data, {
+        headers: {
+          'X-Total-Count': data[0]?.totalCount.toString() ?? '0',
+        },
+      });
+    }
+  )
   .get(
     '/v2/daily-plans',
     rbac({ roles: ['dispatcher', 'admin', 'driver', 'markscheider', 'ita'] }),

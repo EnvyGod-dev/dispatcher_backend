@@ -81,6 +81,8 @@ shiftsReportRouter
       'query',
       z.object({
         operationalDate: z.string().regex(DATE_ONLY_PATTERN).optional(),
+        startDate: z.string().regex(DATE_ONLY_PATTERN).optional(),
+        endDate: z.string().regex(DATE_ONLY_PATTERN).optional(),
         shiftType: z.enum(['day', 'night']).optional(),
         driverId: z.string().uuid().optional(),
         vehicleId: z.string().uuid().optional(),

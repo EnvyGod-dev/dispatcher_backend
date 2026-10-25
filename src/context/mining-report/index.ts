@@ -46,6 +46,18 @@ const percent = (a: number, b: number) => (b > 0 ? round((a / b) * 100, 1) : nul
 
 type ShiftType = 'day' | 'night';
 
+/** Рейс хийдэг (тээврийн) техникийн төрөл. Бусад нь туслах техник. */
+const HAUL_VEHICLE_TYPES = new Set(['truck', 'dump']);
+
+/** Улаанбаатарын цаг (UTC+8, зуны цаг байхгүй) — рейсийг цагаар бүлэглэхэд. */
+const UB_OFFSET_HOURS = 8;
+const ubHour = (iso: string | null) => {
+  if (!iso) return null;
+  const time = Date.parse(iso);
+  if (Number.isNaN(time)) return null;
+  return (new Date(time).getUTCHours() + UB_OFFSET_HOURS) % 24;
+};
+
 /** Бүтээлийн нийлбэр (ээлж, өдөр, ээлжийн бригад гэх мэт бүх түвшинд ашиглана). */
 class Agg {
   shifts = 0;
@@ -208,6 +220,8 @@ export const getMiningReport = async ({
         shiftId: workLogs.shiftId,
         stockpileType: stockpiles.type,
         stockpileLayer: stockpiles.layerNumber,
+        startTime: workLogs.startTime,
+        endTime: workLogs.endTime,
         excavatorId: dailyPlans.vehicleId,
         excavatorCode: excavator.code,
         excavatorName: excavator.name,
@@ -330,10 +344,20 @@ export const getMiningReport = async ({
   const crews = new Map<Crew, Agg>();
   const crewShiftTypes = new Map<Crew, { day: number; night: number }>();
   const dayMap = new Map<string, { day: Agg; night: Agg }>();
-  const truckMap = new Map<
-    string,
-    { agg: Agg; code: string | null; name: string; model: string | null; type: string | null; owner: string | null }
-  >();
+  type VehicleEntry = {
+    agg: Agg;
+    code: string | null;
+    name: string;
+    model: string | null;
+    type: string | null;
+    owner: string | null;
+  };
+  /** Рейс хийсэн/тээврийн техник. */
+  const truckMap = new Map<string, VehicleEntry>();
+  /** Туслах техник (бульдозер, грейдер, ачигч гэх мэт) — рейсгүй ээлжүүд. */
+  const supportMap = new Map<string, VehicleEntry>();
+  /** Цаг тутмын рейс (УБ цаг), өдөр/шөнийн ээлжээр. */
+  const hourly = Array.from({ length: 24 }, (_, hour) => ({ hour, day: 0, night: 0 }));
   const operatorMap = new Map<string, { agg: Agg; name: string; crews: Map<Crew, number> }>();
   const excavatorMap = new Map<
     string,
@@ -407,7 +431,13 @@ export const getMiningReport = async ({
     const motoHours = motoStart !== null && motoEnd !== null && motoEnd >= motoStart ? motoEnd - motoStart : 0;
     const km = kmStart !== null && kmEnd !== null && kmEnd >= kmStart ? kmEnd - kmStart : 0;
 
-    const truck = truckMap.get(shift.vehicleId) ?? {
+    const isHaul = logs.length > 0 || HAUL_VEHICLE_TYPES.has(shift.vehicleType ?? '');
+
+    // Экскаватор өөрийн хэсэгт (рейс, цаг ашиглалт) гардаг тул туслах техникт оруулахгүй.
+    if (!isHaul && shift.vehicleType === 'excavator') continue;
+
+    const vehicleMap = isHaul ? truckMap : supportMap;
+    const truck = vehicleMap.get(shift.vehicleId) ?? {
       agg: new Agg(),
       code: shift.vehicleCode,
       name: shift.vehicleName,
@@ -415,7 +445,16 @@ export const getMiningReport = async ({
       type: shift.vehicleType,
       owner: shift.owner,
     };
-    truckMap.set(shift.vehicleId, truck);
+    vehicleMap.set(shift.vehicleId, truck);
+
+    // Туслах техникийн рейсгүй ээлжийг бүтээлийн нийлбэрт (ээлж, рейс/ээлж) оруулахгүй.
+    if (!isHaul) {
+      truck.agg.shifts += 1;
+      truck.agg.operators.add(shift.driverId);
+      truck.agg.motoHours += motoHours;
+      truck.agg.km += km;
+      continue;
+    }
 
     const operator = operatorMap.get(shift.driverId) ?? {
       agg: new Agg(),
@@ -437,7 +476,8 @@ export const getMiningReport = async ({
 
     for (const agg of targets) {
       agg.shifts += 1;
-      agg.trucks.add(shift.vehicleId);
+      // Машины тоонд зөвхөн рейс хийсэн машиныг тоолно.
+      if (logs.length > 0) agg.trucks.add(shift.vehicleId);
       agg.operators.add(shift.driverId);
       agg.trips += logs.length;
       agg.coalTrips += coalTrips;
@@ -474,6 +514,11 @@ export const getMiningReport = async ({
 
     for (const log of logs) {
       const m3 = log.stockpileType === 'coal' ? coalPerTrip : log.stockpileType === 'soil' ? soilPerTrip : 0;
+      const hour = ubHour(log.endTime ?? log.startTime);
+
+      const bucket = hour === null ? undefined : hourly[hour];
+
+      if (bucket) bucket[shiftType] += 1;
 
       if (log.excavatorId && shiftType === 'night') {
         addBest(nightExcavators, log.excavatorId, log.excavatorName ?? '—', log.excavatorCode, m3, 1);
@@ -540,7 +585,7 @@ export const getMiningReport = async ({
       unassignedFuel += liters;
     }
 
-    const truck = truckMap.get(refuel.receiverVehicleId);
+    const truck = truckMap.get(refuel.receiverVehicleId) ?? supportMap.get(refuel.receiverVehicleId);
 
     if (truck) {
       truck.agg.fuelLiters += liters;
@@ -678,6 +723,19 @@ export const getMiningReport = async ({
 
   const totalResult = totals.result();
 
+  const vehicleRows = (map: Map<string, VehicleEntry>) =>
+    [...map.entries()]
+      .map(([vehicleId, t]) => ({
+        vehicleId,
+        code: t.code,
+        name: t.name,
+        model: t.model,
+        type: t.type,
+        owner: t.owner,
+        ...t.agg.result(),
+      }))
+      .sort((a, b) => b.totalM3 - a.totalM3 || b.trips - a.trips || b.shifts - a.shifts);
+
   // ── Онцлох: шөнийн ээлжийн шилдэг оператор, машин, экскаватор; хамгийн их түлш авсан техник ─
   const best = (map: Map<string, Best>) => {
     const top = [...map.entries()].sort((a, b) => b[1].m3 - a[1].m3 || b[1].trips - a[1].trips)[0];
@@ -780,17 +838,11 @@ export const getMiningReport = async ({
       };
     }),
     excavators: excavatorsOut,
-    trucks: [...truckMap.entries()]
-      .map(([vehicleId, t]) => ({
-        vehicleId,
-        code: t.code,
-        name: t.name,
-        model: t.model,
-        type: t.type,
-        owner: t.owner,
-        ...t.agg.result(),
-      }))
-      .sort((a, b) => b.totalM3 - a.totalM3 || b.trips - a.trips),
+    trucks: vehicleRows(truckMap),
+    /** Туслах техник: рейс хийдэггүй техникийн ээлж, мото цаг, түлш. */
+    supportVehicles: vehicleRows(supportMap),
+    /** Цаг тутмын рейс (УБ цаг 0–23), өдөр/шөнийн ээлжээр. */
+    hourly,
     operators: [...operatorMap.entries()]
       .map(([driverId, o]) => {
         const mainCrew = [...o.crews.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;

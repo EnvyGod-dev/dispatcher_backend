@@ -13,8 +13,10 @@ import {
   desc,
   eq,
   getTableColumns,
+  gte,
   inArray,
   isNull,
+  lte,
   ne,
   sql,
 } from 'drizzle-orm';
@@ -78,11 +80,21 @@ export async function getDailyPlans(
   filters: {
     organizationId: string;
     date?: string;
+    /** Вебийн жагсаалт: огнооны муж (өгвөл `date`-ийн оронд хэрэглэнэ). */
+    startDate?: string;
+    endDate?: string;
     shiftType?: ShiftType;
     status?: DailyPlanStatus;
   }
 ) {
   const targetDate = filters.date ?? newDateInUb().format('YYYY-MM-DD');
+  const isRange = Boolean(filters.startDate || filters.endDate);
+  const dateCondition = isRange
+    ? and(
+        filters.startDate ? gte(dailyPlans.date, filters.startDate) : undefined,
+        filters.endDate ? lte(dailyPlans.date, filters.endDate) : undefined
+      )
+    : eq(dailyPlans.date, targetDate);
 
   const plans = await drizzleDb
     .select({
@@ -98,7 +110,7 @@ export async function getDailyPlans(
     .where(
       and(
         eq(dailyPlans.organizationId, filters.organizationId),
-        eq(dailyPlans.date, targetDate),
+        dateCondition,
         filters.status ? eq(dailyPlans.status, filters.status) : undefined,
         filters.shiftType
           ? eq(dailyPlans.shiftType, filters.shiftType)
@@ -107,7 +119,11 @@ export async function getDailyPlans(
     )
     .limit(pagination.limit)
     .offset(pagination.offset)
-    .orderBy(desc(dailyPlans.createdAt));
+    .orderBy(
+      ...(isRange
+        ? [desc(dailyPlans.date), desc(dailyPlans.createdAt)]
+        : [desc(dailyPlans.createdAt)])
+    );
 
   // get all stockpile IDs from the plans
   const allStockpileIds = plans.flatMap((plan) => plan.stockpileIds || []);
@@ -130,7 +146,7 @@ export async function getDailyPlans(
     .where(
       and(
         eq(dailyPlans.organizationId, filters.organizationId),
-        eq(dailyPlans.date, targetDate),
+        dateCondition,
         filters.status ? eq(dailyPlans.status, filters.status) : undefined,
         filters.shiftType
           ? eq(dailyPlans.shiftType, filters.shiftType)
