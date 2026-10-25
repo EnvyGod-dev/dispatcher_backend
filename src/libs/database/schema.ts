@@ -771,6 +771,9 @@ export const repairReasonTypes = pgTable(
 
     vehicleTypes: text("vehicle_types").array().notNull().default([]),
 
+    /** 'repair' — засварын төрөл, 'technical_idle' — техникийн сул зогсолт. */
+    category: text("category").notNull().default("repair"),
+
     isActive: boolean("is_active").notNull().default(true),
 
     createdAt: timestamp("created_at", {

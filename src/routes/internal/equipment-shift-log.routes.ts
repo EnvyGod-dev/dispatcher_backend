@@ -60,6 +60,12 @@ const vehicleTypeSchema = z.enum([
     'grader',
 ]);
 
+/** Засварын шалтгааны ангилал: засварын төрөл эсвэл техникийн сул зогсолт. */
+const repairReasonCategorySchema = z.enum([
+    'repair',
+    'technical_idle',
+]);
+
 const userRoleSchema = z.enum([
     'superadmin',
     'admin',
@@ -279,6 +285,13 @@ const equipmentShiftLogRoutes = new Hono<AppEnv>()
                             body.vehicleTypes,
                     });
 
+                if (!result) {
+                    throw new HTTPException(409, {
+                        message:
+                            'Энэ нэртэй сул зогсолтын шалтгаан аль хэдийн байна',
+                    });
+                }
+
                 return c.json(result, 201);
             } catch (err: unknown) {
                 if (
@@ -456,6 +469,9 @@ const equipmentShiftLogRoutes = new Hono<AppEnv>()
                 vehicleTypes: z
                     .array(vehicleTypeSchema)
                     .default([]),
+
+                category: repairReasonCategorySchema
+                    .default('repair'),
             })
         ),
         async (c) => {
@@ -481,8 +497,18 @@ const equipmentShiftLogRoutes = new Hono<AppEnv>()
 
                             vehicleTypes:
                                 body.vehicleTypes,
+
+                            category:
+                                body.category,
                         }
                     );
+
+                if (!result) {
+                    throw new HTTPException(409, {
+                        message:
+                            'Энэ нэртэй эвдрэл гэмтлийн шалтгаан аль хэдийн байна',
+                    });
+                }
 
                 return c.json(result, 201);
             } catch (err: unknown) {
@@ -523,6 +549,9 @@ const equipmentShiftLogRoutes = new Hono<AppEnv>()
 
                 vehicleTypes: z
                     .array(vehicleTypeSchema)
+                    .optional(),
+
+                category: repairReasonCategorySchema
                     .optional(),
 
                 isActive: z

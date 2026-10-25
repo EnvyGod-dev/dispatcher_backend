@@ -293,6 +293,10 @@ export const getIdleReasonTypesForVehicle =
             );
     };
 
+/**
+ * Устгасан (идэвхгүй) ижил нэртэй шалтгаан байвал түүнийг дахин идэвхжүүлнэ.
+ * Идэвхтэй ижил нэртэй байвал юу ч буцаахгүй (давхардсан нэр).
+ */
 export const createIdleReasonType = async (
     input:
         typeof idleReasonTypes.$inferInsert
@@ -301,6 +305,18 @@ export const createIdleReasonType = async (
         await drizzleDb
             .insert(idleReasonTypes)
             .values(input)
+            .onConflictDoUpdate({
+                target: [
+                    idleReasonTypes.organizationId,
+                    idleReasonTypes.name,
+                ],
+                set: {
+                    ...input,
+                    isActive: true,
+                    updatedAt: new Date().toISOString(),
+                },
+                setWhere: eq(idleReasonTypes.isActive, false),
+            })
             .returning()
     );
 };
@@ -448,6 +464,10 @@ export const getRepairReasonTypesForVehicle =
             );
     };
 
+/**
+ * Устгасан (идэвхгүй) ижил нэртэй шалтгаан байвал түүнийг дахин идэвхжүүлнэ.
+ * Идэвхтэй ижил нэртэй байвал юу ч буцаахгүй (давхардсан нэр).
+ */
 export const createRepairReasonType = async (
     input:
         typeof repairReasonTypes.$inferInsert
@@ -456,6 +476,18 @@ export const createRepairReasonType = async (
         await drizzleDb
             .insert(repairReasonTypes)
             .values(input)
+            .onConflictDoUpdate({
+                target: [
+                    repairReasonTypes.organizationId,
+                    repairReasonTypes.name,
+                ],
+                set: {
+                    ...input,
+                    isActive: true,
+                    updatedAt: new Date().toISOString(),
+                },
+                setWhere: eq(repairReasonTypes.isActive, false),
+            })
             .returning()
     );
 };
