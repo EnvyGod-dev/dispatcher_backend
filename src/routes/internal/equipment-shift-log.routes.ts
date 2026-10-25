@@ -1031,6 +1031,11 @@ const equipmentShiftLogRoutes = new Hono<AppEnv>()
                     z.string()
                         .uuid()
                         .optional(),
+
+                /** Өдөр/шөнийн ээлжээр шүүх. */
+                shiftType: z
+                    .enum(['day', 'night'])
+                    .optional(),
             })
         ),
         async (c) => {

@@ -1169,6 +1169,7 @@ export const getShiftLogs = async ({
     startDate,
     endDate,
     vehicleId,
+    shiftType,
     limit = 50,
     offset = 0,
 }: {
@@ -1176,6 +1177,7 @@ export const getShiftLogs = async ({
     startDate?: string;
     endDate?: string;
     vehicleId?: string;
+    shiftType?: 'day' | 'night';
     limit?: number;
     offset?: number;
 }) => {
@@ -1209,6 +1211,15 @@ export const getShiftLogs = async ({
             eq(
                 equipmentShiftLogs.vehicleId,
                 vehicleId
+            )
+        );
+    }
+
+    if (shiftType) {
+        conditions.push(
+            eq(
+                equipmentShiftLogs.shiftType,
+                shiftType
             )
         );
     }
