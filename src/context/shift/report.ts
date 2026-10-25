@@ -66,6 +66,9 @@ const issueInspectionsJson = (shiftId: typeof shifts.id) => sql<
 export type ShiftInspectionReportFilter = {
   organizationId: string;
   operationalDate?: string;
+  /** Олон өдрөөр харах: ажлын өдрийн муж (хоёул багтана). */
+  startDate?: string;
+  endDate?: string;
   shiftType?: ShiftType;
   driverId?: string;
   vehicleId?: string;
@@ -354,6 +357,8 @@ export const getShiftInspectionReports = async (
   {
     organizationId,
     operationalDate,
+    startDate,
+    endDate,
     shiftType,
     driverId,
     vehicleId,
@@ -366,6 +371,12 @@ export const getShiftInspectionReports = async (
     eq(shifts.organizationId, organizationId),
     operationalDate
       ? sql`${effectiveOperationalDate} = ${operationalDate}`
+      : undefined,
+    startDate
+      ? sql`${effectiveOperationalDate} >= ${startDate}`
+      : undefined,
+    endDate
+      ? sql`${effectiveOperationalDate} <= ${endDate}`
       : undefined,
     shiftType ? eq(shifts.shiftType, shiftType) : undefined,
     driverId ? eq(shifts.driverId, driverId) : undefined,
