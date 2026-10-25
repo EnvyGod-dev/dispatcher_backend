@@ -211,6 +211,36 @@ export const getActiveDailyPlan = async ({
   return existing;
 };
 
+/**
+ * Сонгосон овоолгуудын маршрут (овоолгын дарааллаар эхний холбосон маршрут).
+ * Аль нь ч маршрутгүй бол null.
+ */
+export async function getRouteIdForStockpiles(
+  stockpileIds: string[],
+  organizationId: string
+): Promise<string | null> {
+  if (stockpileIds.length === 0) return null;
+
+  const rows = await drizzleDb
+    .select({ id: stockpiles.id, routeId: stockpiles.routeId })
+    .from(stockpiles)
+    .where(
+      and(
+        inArray(stockpiles.id, stockpileIds),
+        eq(stockpiles.organizationId, organizationId)
+      )
+    );
+
+  const byId = new Map(rows.map((row) => [row.id, row.routeId]));
+
+  for (const id of stockpileIds) {
+    const routeId = byId.get(id);
+    if (routeId) return routeId;
+  }
+
+  return null;
+}
+
 export async function createDailyPlan(input: CreateDailyPlanInput) {
   return drizzleDb.transaction(async (tx) => {
     await tx

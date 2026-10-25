@@ -6,6 +6,7 @@ import {
   getDailyPlanByDateType,
   getDailyPlanById,
   getDailyPlans,
+  getRouteIdForStockpiles,
   updateDailyPlan,
 } from '$/context/daily-plan';
 import { drizzleDb } from '$/libs/database/db';
@@ -280,7 +281,8 @@ const dailyPlanRoutes = new Hono<AppEnv>()
       'json',
       z.object({
         shiftType: z.enum(enumShiftType.enumValues),
-        routeId: z.string().uuid(),
+        /** Өгөхгүй бол сонгосон овоолгын маршрутаас авна. */
+        routeId: z.string().uuid().nullable().optional(),
         pickUpBlockId: z.string().uuid(),
         stockpileIds: z.array(z.string().uuid()),
         vehicleId: z.string().uuid(),
@@ -304,8 +306,13 @@ const dailyPlanRoutes = new Hono<AppEnv>()
         });
       }
 
+      const routeId =
+        body.routeId ??
+        (await getRouteIdForStockpiles(body.stockpileIds, user.organizationId));
+
       const plan = await createDailyPlan({
         ...body,
+        routeId,
         createdBy: user.id,
         organizationId: user.organizationId,
       });
@@ -320,7 +327,8 @@ const dailyPlanRoutes = new Hono<AppEnv>()
       'json',
       z.object({
         id: z.string().uuid(),
-        routeId: z.string().uuid().optional(),
+        /** Өгөхгүй бол овоолго солигдсон үед овоолгын маршрутаас авна. */
+        routeId: z.string().uuid().nullable().optional(),
         pickUpBlockId: z.string().uuid().optional(),
         stockpileIds: z.array(z.string()).optional(),
         transportAmount: z.string().nullable().optional(),
@@ -367,7 +375,13 @@ const dailyPlanRoutes = new Hono<AppEnv>()
         }
       }
 
-      const plan = await updateDailyPlan(body);
+      const routeId =
+        body.routeId ??
+        (body.stockpileIds && user.organizationId
+          ? await getRouteIdForStockpiles(body.stockpileIds, user.organizationId)
+          : null);
+
+      const plan = await updateDailyPlan({ ...body, routeId: routeId ?? undefined });
 
       if (!plan) {
         throw new HTTPException(404, {

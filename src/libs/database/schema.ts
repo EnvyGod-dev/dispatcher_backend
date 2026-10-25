@@ -512,9 +512,8 @@ export const dailyPlans = pgTable("daily_plans", {
     .notNull()
     .references(() => organizations.id),
 
-  routeId: uuid("route_id")
-    .notNull()
-    .references(() => routes.id),
+  /** Овоолгын холбосон маршрутаас автоматаар авна; овоолго маршрутгүй бол хоосон. */
+  routeId: uuid("route_id").references(() => routes.id),
 
   pickUpBlockId: uuid("pick_up_block_id")
     .notNull()
