@@ -1,7 +1,7 @@
 import { drizzleDb } from '$/libs/database/db';
 import { routes, stockpiles } from '$/libs/database/schema';
 import { first, firstOrNull, type PaginationType } from '$/libs/database/utils';
-import { and, desc, eq, getTableColumns, ilike } from 'drizzle-orm';
+import { and, desc, eq, getTableColumns, ilike, isNotNull, isNull, ne } from 'drizzle-orm';
 import { getTotalCountSql } from '../helpers';
 import { NotFound, Unauthorized } from '$/utils/errors';
 
@@ -13,6 +13,8 @@ type StockpileInputs = {
   type?: StockpileType;
   layerNumber?: string;
   createdBy?: string;
+  /** Вебээс: 'active' — идэвхтэй, 'inactive' — идэвхгүй. Өгөхгүй бол бүгд (mobile хуучнаараа). */
+  status?: 'active' | 'inactive';
 };
 
 export const getStockpileByPk = async (id: string) => {
@@ -23,7 +25,7 @@ export const getStockpileByPk = async (id: string) => {
 
 export const getStockpiles = async (
   { limit, offset }: PaginationType,
-  { organizationId, type, layerNumber }: StockpileInputs
+  { organizationId, type, layerNumber, status }: StockpileInputs
 ) => {
   return drizzleDb
     .select({
@@ -38,7 +40,12 @@ export const getStockpiles = async (
       and(
         eq(stockpiles.organizationId, organizationId),
         type ? eq(stockpiles.type, type) : undefined,
-        layerNumber ? ilike(stockpiles.layerNumber, `%${layerNumber}%`) : undefined
+        layerNumber ? ilike(stockpiles.layerNumber, `%${layerNumber}%`) : undefined,
+        status === 'active'
+          ? isNull(stockpiles.deactivatedAt)
+          : status === 'inactive'
+            ? isNotNull(stockpiles.deactivatedAt)
+            : undefined
       )
     )
     .orderBy(desc(stockpiles.createdAt))
@@ -59,6 +66,34 @@ export const assertRouteInOrganization = async (routeId: string, organizationId:
     throw new NotFound('Маршрут олдсонгүй');
   }
 };
+
+/** Ижил төрөл, дугаартай идэвхтэй овоолго (өөрийгөө эс тооцвол). */
+export const findActiveDuplicateStockpile = async ({
+  organizationId,
+  type,
+  layerNumber,
+  excludeId,
+}: {
+  organizationId: string;
+  type: StockpileType;
+  layerNumber: string;
+  excludeId?: string;
+}) =>
+  firstOrNull(
+    await drizzleDb
+      .select({ id: stockpiles.id })
+      .from(stockpiles)
+      .where(
+        and(
+          eq(stockpiles.organizationId, organizationId),
+          eq(stockpiles.type, type),
+          eq(stockpiles.layerNumber, layerNumber.trim()),
+          isNull(stockpiles.deactivatedAt),
+          excludeId ? ne(stockpiles.id, excludeId) : undefined
+        )
+      )
+      .limit(1)
+  );
 
 export const createStockpile = async (input: StockpileInput) => {
   return first(await drizzleDb.insert(stockpiles).values(input).returning());

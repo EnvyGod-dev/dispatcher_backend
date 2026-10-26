@@ -514,7 +514,9 @@ export const getMiningReport = async ({
 
     for (const log of logs) {
       const m3 = log.stockpileType === 'coal' ? coalPerTrip : log.stockpileType === 'soil' ? soilPerTrip : 0;
-      const hour = ubHour(log.endTime ?? log.startTime);
+      // Эхэлсэн цагаар нь (өөрчлөгдөхгүй) бүлэглэнэ; дууссан цаг рейс дуусахад шинэчлэгдэж
+      // рейсийг дараагийн цаг руу шилжүүлдэг байсан.
+      const hour = ubHour(log.startTime ?? log.endTime);
 
       const bucket = hour === null ? undefined : hourly[hour];
 
