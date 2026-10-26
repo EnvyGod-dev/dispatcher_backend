@@ -9,12 +9,15 @@ import { drizzleDb } from '$/libs/database/db';
 import {
     vehicles,
     shifts,
+    users,
 } from '$/libs/database/schema';
 
 import {
     and,
+    desc,
     eq,
     isNull,
+    ne,
 } from 'drizzle-orm';
 
 import {
@@ -1118,6 +1121,125 @@ const equipmentShiftLogRoutes = new Hono<AppEnv>()
             }
 
             return c.json(log);
+        }
+    )
+
+    /* =====================================================
+     * VEHICLE SHIFTS (оператор автоматаар)
+     * =================================================== */
+
+    /**
+     * Тухайн ажлын өдөр (ба ээлжид) техник бүрийн ээлж, оператор.
+     * Цаг ашиглалтын бүртгэлд операторыг автоматаар бөглөхөд (зөвхөн веб).
+     */
+    .get(
+        '/vehicle-shifts',
+        rbac({
+            roles: [
+                'admin',
+                'dispatcher',
+                'mechanic',
+            ],
+        }),
+        zValidator(
+            'query',
+            z.object({
+                date: z
+                    .string()
+                    .regex(
+                        /^\d{4}-\d{2}-\d{2}$/,
+                        'YYYY-MM-DD формат байх ёстой'
+                    ),
+
+                shiftType: z
+                    .enum(['day', 'night'])
+                    .optional(),
+            })
+        ),
+        async (c) => {
+            const { date, shiftType } =
+                c.req.valid('query');
+
+            const user =
+                c.get('currentUser');
+
+            if (!user.organizationId) {
+                throw new HTTPException(403, {
+                    message: 'Unauthorized',
+                });
+            }
+
+            const rows = await drizzleDb
+                .select({
+                    vehicleId: shifts.vehicleId,
+                    shiftId: shifts.id,
+                    shiftType: shifts.shiftType,
+                    operatorId: shifts.driverId,
+                    firstName: users.firstName,
+                    lastName: users.lastName,
+                    name: users.name,
+                })
+                .from(shifts)
+                .leftJoin(
+                    users,
+                    eq(users.id, shifts.driverId)
+                )
+                .where(
+                    and(
+                        eq(
+                            shifts.organizationId,
+                            user.organizationId
+                        ),
+                        eq(
+                            shifts.operationalDate,
+                            date
+                        ),
+                        ne(
+                            shifts.status,
+                            'cancelled'
+                        ),
+                        shiftType
+                            ? eq(
+                                shifts.shiftType,
+                                shiftType
+                            )
+                            : undefined
+                    )
+                )
+                .orderBy(
+                    desc(shifts.shiftStart)
+                );
+
+            // Нэг техникт олон ээлж байвал хамгийн сүүлд эхэлснийг авна.
+            const byVehicle = new Map<
+                string,
+                (typeof rows)[number]
+            >();
+
+            for (const row of rows) {
+                const key = `${row.vehicleId}|${row.shiftType}`;
+
+                if (!byVehicle.has(key)) {
+                    byVehicle.set(key, row);
+                }
+            }
+
+            return c.json(
+                [...byVehicle.values()].map(
+                    (row) => ({
+                        vehicleId: row.vehicleId,
+                        shiftId: row.shiftId,
+                        shiftType: row.shiftType,
+                        operatorId: row.operatorId,
+                        operatorName:
+                            [row.lastName, row.firstName]
+                                .filter(Boolean)
+                                .join(' ') ||
+                            row.name ||
+                            null,
+                    })
+                )
+            );
         }
     )
 

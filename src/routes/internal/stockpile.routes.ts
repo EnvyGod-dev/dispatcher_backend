@@ -1,6 +1,7 @@
 import {
   assertRouteInOrganization,
   createStockpile,
+  findActiveDuplicateStockpile,
   deleteStockpile,
   getStockpileByPk,
   getStockpiles,
@@ -9,7 +10,7 @@ import {
 import { enumStockPileType } from '$/libs/database/schema';
 import { rbac } from '$/middlewares/rbac.middleware';
 import type { AppEnv } from '$/utils/app-env';
-import { NotFound, Unauthorized } from '$/utils/errors';
+import { ClientError, NotFound, Unauthorized } from '$/utils/errors';
 import { zValidator } from '@hono/zod-validator';
 import { Hono } from 'hono';
 import { z } from 'zod';
@@ -25,10 +26,12 @@ export default new Hono<AppEnv>()
         limit: z.coerce.number().default(50),
         type: z.enum(enumStockPileType.enumValues).optional(),
         layerNumber: z.string().optional(),
+        /** Веб: идэвхтэй/идэвхгүйгээр шүүх. Өгөхгүй бол бүгд. */
+        status: z.enum(['active', 'inactive']).optional(),
       })
     ),
     async (c) => {
-      const { offset, limit, type, layerNumber } = c.req.valid('query');
+      const { offset, limit, type, layerNumber, status } = c.req.valid('query');
 
       const currentUser = c.get('currentUser');
 
@@ -42,6 +45,7 @@ export default new Hono<AppEnv>()
           organizationId: currentUser.organizationId,
           type,
           layerNumber,
+          status,
         }
       );
 
@@ -63,10 +67,12 @@ export default new Hono<AppEnv>()
         type: z.enum(enumStockPileType.enumValues).optional(),
         /** null бол маршрутын холбоосыг арилгана. */
         routeId: z.string().uuid().nullable().optional(),
+        /** false — идэвхгүй болгох, true — дахин идэвхжүүлэх. */
+        isActive: z.boolean().optional(),
       })
     ),
     async (c) => {
-      const params = c.req.valid('json');
+      const { isActive, ...params } = c.req.valid('json');
 
       const currentUser = c.get('currentUser');
 
@@ -78,10 +84,37 @@ export default new Hono<AppEnv>()
         await assertRouteInOrganization(params.routeId, currentUser.organizationId);
       }
 
+      const current = await getStockpileByPk(params.id);
+
+      if (!current) {
+        throw new NotFound();
+      }
+
+      // Идэвхтэй болох (эсвэл идэвхтэйг засах) үед ижил төрөл, дугаартай өөр идэвхтэй овоолго байж болохгүй.
+      const willBeActive = isActive ?? !current.deactivatedAt;
+      const nextType = params.type ?? current.type;
+      const nextLayer = params.layerNumber ?? current.layerNumber;
+
+      if (willBeActive && nextLayer) {
+        const duplicate = await findActiveDuplicateStockpile({
+          organizationId: currentUser.organizationId,
+          type: nextType,
+          layerNumber: nextLayer,
+          excludeId: params.id,
+        });
+
+        if (duplicate) {
+          throw new ClientError('Ижил төрөл, дугаартай идэвхтэй овоолго байна.');
+        }
+      }
+
       const updated = await updateStockpile({
         id: params.id,
         params: {
           ...params,
+          ...(isActive !== undefined && {
+            deactivatedAt: isActive ? null : new Date().toISOString(),
+          }),
           organizationId: currentUser.organizationId,
         },
       });
@@ -111,6 +144,16 @@ export default new Hono<AppEnv>()
 
       if (params.routeId) {
         await assertRouteInOrganization(params.routeId, currentUser.organizationId);
+      }
+
+      const duplicate = await findActiveDuplicateStockpile({
+        organizationId: currentUser.organizationId,
+        type: params.type,
+        layerNumber: params.layerNumber,
+      });
+
+      if (duplicate) {
+        throw new ClientError('Ижил төрөл, дугаартай идэвхтэй овоолго аль хэдийн байна.');
       }
 
       const created = await createStockpile({
